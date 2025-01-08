@@ -2,9 +2,10 @@
   "name": "ai-code-review-assistant",
   "version": "1.0.0",
   "description": "An open-source AI-powered tool to automate code reviews and improve code quality.",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
   "keywords": [],
   "author": "",

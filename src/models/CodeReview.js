@@ -1,25 +1,31 @@
-const { DataTypes } = require("sequelize");
-const { sequelize } = require("../config/postgres");
+const mongoose = require("mongoose");
 
-// CodeReview model
-const CodeReview = sequelize.define("CodeReview", {
-  id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
-    primaryKey: true,
+const codeReviewSchema = new mongoose.Schema(
+  {
+    reviewId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    code: {
+      type: String,
+      required: true,
+    },
+    modelName: {
+      type: String,
+      required: true,
+    },
+    analysis: {
+      type: String,
+      required: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
-  fileName: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-  reviewComments: {
-    type: DataTypes.TEXT,
-    allowNull: false,
-  },
-  createdBy: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-});
+  { collection: "reviews" }
+);
 
+const CodeReview = mongoose.model("CodeReview", codeReviewSchema);
 module.exports = CodeReview;

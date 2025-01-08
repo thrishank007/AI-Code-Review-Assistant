@@ -1,13 +1,13 @@
-const { sequelize } = require("../config/postgres");
-const CodeReview = require("../models/CodeReview");
+const { sequelize } = require('../config/postgres');
 
-const syncDatabase = async () => {
+const syncDB = async () => {
   try {
-    await sequelize.sync({ alter: true });
-    console.log("PostgreSQL database synced successfully!");
+    await sequelize.sync({ force: false }); // Set force: true to drop tables and recreate them
+    console.log('Database synced successfully');
   } catch (error) {
-    console.error("Error syncing the database:", error);
+    console.error('Database sync failed:', error);
+    process.exit(1);
   }
 };
 
-module.exports = syncDatabase;
+module.exports = syncDB;
