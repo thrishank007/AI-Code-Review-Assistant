@@ -2,7 +2,7 @@ const { sequelize } = require('../config/postgres');
 
 const syncDB = async () => {
   try {
-    await sequelize.sync({ force: false }); // Set force: true to drop tables and recreate them
+    await sequelize.sync({ force: false });
     console.log('Database synced successfully');
   } catch (error) {
     console.error('Database sync failed:', error);

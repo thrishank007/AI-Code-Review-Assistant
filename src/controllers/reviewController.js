@@ -1,6 +1,6 @@
 const CodeReview = require("../models/CodeReview");
 const ReviewLog = require("../models/ReviewLog");
-const { analyzeCode } = require("../services/aiService");
+const analyzeCode = require("../services/aiService");
 const { v4: uuidv4 } = require("uuid");
 
 // Get all reviews

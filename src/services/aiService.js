@@ -107,7 +107,7 @@ const callQwenAI = async (code) => {
   if (!process.env.OLLAMA_URI) {
     throw new Error("OLLAMA_URI is not set");
   }
-  const url = `${process.env.OLLAMA_URI}/api/generate`;
+  const url = `${process.env.OLLAMA_URI}api/generate`;
   const data = {
     model: "qwen2.5-coder:3b",
     prompt: `Review this code and give a score out of 10\n\n${code}`,
@@ -117,7 +117,7 @@ const callQwenAI = async (code) => {
     "content-type": "application/json",
   };
   const res = await apiRequest(url, data, headers);
-  return res.response.text || "No analysis generated.";
+  return res.response || "No analysis generated.";
 };
 
 module.exports = analyzeCode;
