@@ -145,6 +145,14 @@ Server is running on port 3000
 ```
 Authorization: Bearer YOUR_JWT_TOKEN
 ```
+#### Get ReviewById:
+- **Method**: GET
+- **URL**: `/api/v1/reviews/:reviewId`
+- **Headers**:
+
+```
+Authorization: Bearer YOUR_JWT_TOKEN
+```
 
 #### Add a New Review:
 - **Method**: POST

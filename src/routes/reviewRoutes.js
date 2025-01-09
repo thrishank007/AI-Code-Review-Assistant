@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { getReviews, addReview, deleteReview } = require('../controllers/reviewController');
+const { getReviews, addReview, deleteReview, getReviewById } = require('../controllers/reviewController');
 const authenticate = require('../middlewares/auth');
 
 const router = express.Router();
@@ -25,5 +25,8 @@ router.post('/', authenticate, validateReview, (req, res, next) => {
 
 // Delete a review
 router.delete('/:reviewId', authenticate, deleteReview);
+
+// Get a Review by Id
+router.get('/:reviewId', authenticate, getReviewById);
 
 module.exports = router;
