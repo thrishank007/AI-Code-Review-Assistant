@@ -1,32 +1,35 @@
 {
-  "name": "ai-code-review-assistant",
-  "version": "1.0.0",
-  "description": "An open-source AI-powered tool to automate code reviews and improve code quality.",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+  "name": "ai-pr-reviewer",
+  "version": "0.1.0",
+  "description": "Self-hosted GitHub App that reviews pull requests with your own OpenAI-compatible LLM. Like CodeRabbit, but yours.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "review:pr": "tsx scripts/review-pr.ts"
+  },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "axios": "^1.7.9",
-    "bcrypt": "^5.1.1",
-    "body-parser": "^1.20.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "express-validator": "^7.2.1",
-    "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.9.3",
-    "pg": "^8.13.1",
-    "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.5"
+    "dotenv": "^16.4.5",
+    "octokit": "^3.1.0",
+    "pino": "^9.4.0",
+    "yaml": "^2.5.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "eslint": "^9.17.0",
-    "nodemon": "^3.1.9"
+    "@types/node": "^20.14.0",
+    "eslint": "^9.9.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.5"
   }
 }
