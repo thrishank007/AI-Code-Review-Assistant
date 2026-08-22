@@ -1,203 +1,141 @@
-# AI-Code-Review-Assistant
-An open-source AI-powered tool to automate code reviews and improve code quality.
+# ai-pr-reviewer
 
-## Description
+A self-hosted **GitHub App** that reviews your pull requests with **your own LLM** — like CodeRabbit or Copilot code review, but open source (MIT) and running against any OpenAI-compatible provider: OpenAI, Ollama, vLLM, LM Studio, Groq, OpenRouter, and anything else that speaks the chat-completions API.
 
-The AI Code Review Assistant is a web application that leverages AI models to perform automated code reviews. 🛠️✨ It uses MongoDB for storing AI-generated code review data and PostgreSQL for user authentication and structured data. 📊🔒
+- 🔔 Triggered automatically on every PR (opened / new pushes / ready for review)
+- 💬 Posts one review per push: inline comments on the exact lines + a markdown summary
+- 🔌 Bring your own model — one base URL + key + model name
+- 🏠 Single small Node service, no database, deploys anywhere (Docker or plain Node)
+- ⚙️ Per-repo config file (`.aireview.yml`) for ignores, extra instructions, and severity filters
+- 🛡️ Non-blocking: reviews are advisory (`COMMENT`), never `REQUEST_CHANGES`
 
-## Features
-
-- **AI Code Review**: Automatically analyze code using various AI models (OpenAI, Gemini, Claude, Qwen). 🤖📋
-- **User Authentication**: Register and log in users with role-based access control. 🔑👤
-- **Review Logs**: Log interactions and events related to code reviews. 🗂️🖋️
-- **Hybrid Database**: Uses MongoDB for unstructured data and PostgreSQL for structured data. 🗄️📂
-
-## Technologies Used
-
-- **Backend**: Node.js, Express.js ⚙️
-- **Databases**: MongoDB, PostgreSQL 🛢️
-- **AI Models**: OpenAI, Gemini, Claude, Qwen 🌟
-- **Authentication**: JSON Web Tokens (JWT) 🔒
-- **Validation**: Express Validator ✅
-
-## Prerequisites
-
-- Node.js and npm installed on your machine. 💻
-- MongoDB and PostgreSQL installed and running. 🛢️⚡
-- API keys for OpenAI, Gemini, Claude, and Qwen. 🔑
-
-## Setup
-
-### 1. Clone the Repository
-
-```sh
-git clone https://github.com/thrishank007/AI-Code-Review-Assistant.git
-cd AI-Code-Review-Assistant
-```
-
-### 2. Install Dependencies
-
-```sh
-npm install
-```
-
-### 3. Configure Environment Variables
-
-Create a `.env` file in the root directory and add the following environment variables:
+## How it works
 
 ```
-MONGODB_URI=mongodb://localhost:27017/code_review_ai
-POSTGRES_USER=YOUR_USERNAME
-POSTGRES_HOST=localhost
-POSTGRES_DB=code_review_ai
-POSTGRES_PASSWORD=YOUR_PASSWORD
-POSTGRES_PORT=5432
-JWT_SECRET=YOUR_JWT_TOKEN
-OPENAI_API_KEY=YOUR_OPENAI_KEY
-GEMINIAI_API_KEY=YOUR_GEMINIAI_KEY
-ANTHROPIC_API_KEY=YOUR_ANTHROPIC_KEY
-OLLAMA_URI=http://localhost:11434/
-PORT=3000
+GitHub ── pull_request webhook ──▶ POST /webhook (signature-verified, 202 fast-ack)
+                                      │
+                                      ▼
+                          fetch PR files + .aireview.yml
+                                      │
+                                      ▼
+                    filter (ignores, caps) ─▶ build prompt (diff hunks)
+                                      │
+                                      ▼
+                       your LLM (OpenAI-compatible endpoint)
+                                      │
+                                      ▼
+              parse JSON findings ─▶ clamp lines to real diff hunks
+                                      │
+                                      ▼
+              POST PR review: summary + inline comments
 ```
 
-Replace placeholders with your actual values. ✏️
+Hallucinated line numbers are clamped to lines that actually exist in the diff, so GitHub never rejects a comment. Duplicate webhook deliveries are deduped per head SHA. If the LLM returns unparseable output, it gets one corrective retry and then falls back to posting the raw response.
 
-### 4. Set Up PostgreSQL
+## Quick start
 
-1. **Install PostgreSQL**: Follow the instructions in the [PostgreSQL Installation Guide](https://www.postgresql.org/docs/current/installation.html). 🛠️
+### 1. Create the GitHub App
 
-2. **Create Database and User**:
+On GitHub: **Settings → Developer settings → GitHub Apps → New GitHub App** (or the equivalent org-level page).
 
-Access PostgreSQL:
+| Field | Value |
+|---|---|
+| GitHub App name | anything, e.g. `ai-pr-reviewer` |
+| Webhook URL | your service's public HTTPS URL, e.g. `https://reviewer.example.com/webhook` |
+| Webhook secret | a random string (→ `WEBHOOK_SECRET`) |
+| Permissions | **Pull requests: Read & write**, **Contents: Read-only** |
+| Subscribe to events | **Pull request** |
+| Where can this app be installed | Only this account / organization (for an internal app) |
 
-```sh
-sudo -i -u postgres
-psql
+After creating it: note the **App ID** (→ `APP_ID`), and under **Private keys** generate a `.pem` (→ `PRIVATE_KEY`). Install the app on the repos you want reviewed.
+
+### 2. Configure and run
+
+```bash
+cp .env.example .env   # fill in APP_ID, PRIVATE_KEY, WEBHOOK_SECRET, LLM_*
+docker compose up -d   # or: npm ci && npm run build && npm start
+curl http://localhost:3000/healthz
 ```
 
-Create database and user:
+Open a non-draft PR in a repo where the app is installed — the review lands within a minute or two.
 
-```sql
-CREATE DATABASE code_review_ai;
-CREATE USER yourusername WITH ENCRYPTED PASSWORD 'yourpassword';
-GRANT ALL PRIVILEGES ON DATABASE code_review_ai TO yourusername;
-\q
-exit
+<details>
+<summary>Local development without a public URL</summary>
+
+Use [smee.io](https://smee.io) (or ngrok) to forward webhooks to your laptop:
+
+```bash
+npx smee-client --target http://localhost:3000/webhook --url https://smee.io/XXXX
+npm run dev
 ```
 
-### 5. Start the Server
+Point the app's Webhook URL at the smee.io URL while developing. You can also test the engine without any webhook:
 
-```sh
-npm start
+```bash
+npm run review:pr -- owner/repo#123
 ```
 
-or
+(prints the review to stdout instead of posting it — handy for prompt iteration.)
 
-```sh
-node src/server.js
+</details>
+
+## Configuration
+
+### Service environment (`.env`)
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `APP_ID` | ✅ | | GitHub App ID |
+| `PRIVATE_KEY` | ✅ | | App private key; literal `\n` escapes are fine |
+| `WEBHOOK_SECRET` | ✅ | | Must match the app's webhook secret |
+| `LLM_BASE_URL` | ✅ | | e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1` |
+| `LLM_MODEL` | ✅ | | e.g. `gpt-4o-mini`, `qwen2.5-coder:7b` |
+| `LLM_API_KEY` | ➖ | | Omit for keyless local servers (Ollama, vLLM) |
+| `GITHUB_API_URL` | ➖ | | GitHub Enterprise override |
+| `PORT` | ➖ | `3000` | |
+| `LOG_LEVEL` | ➖ | `info` | pino level |
+| `LLM_TIMEOUT_MS` / `LLM_MAX_TOKENS` / `LLM_JSON_MODE` | ➖ | `120000` / `4096` / on | |
+| `MAX_FILES` / `MAX_DIFF_CHARS` | ➖ | `30` / `120000` | Review-size caps |
+
+### Per-repo config (`.aireview.yml` at repo root, optional)
+
+```yaml
+# Extra glob patterns to skip, merged with the built-in list
+# (lockfiles, dist/, node_modules/, minified files, ...)
+ignore:
+  - "src/generated/**"
+
+# Override the service's MAX_FILES for this repo
+max_files: 15
+
+# Extra context injected into the prompt
+instructions: "We use Fastify and Vitest. Flag missing await and missing tests."
+
+# Only post findings at these severities (default: all)
+severities: [critical, warning, suggestion]
 ```
 
-You should see output similar to this:
+Severities: 🔴 `critical` (bug/security/data loss), 🟠 `warning` (likely bug/risky), 🔵 `suggestion` (meaningful improvement), ⚪ `nit` (polish).
 
-```
-Connected to MongoDB
-Connected to PostgreSQL using Sequelize!
-Database synced successfully
-Server is running on port 3000
-```
+## Development
 
-## Endpoints
-
-### User Endpoints
-
-#### Register a New User:
-- **Method**: POST
-- **URL**: `/api/v1/users/register`
-- **Body**:
-
-```json
-{
-  "username": "testuser",
-  "email": "test@example.com",
-  "password": "password123"
-}
+```bash
+npm ci
+npm test        # 88 unit/integration tests, all external calls mocked
+npm run lint
+npm run build   # emits dist/
 ```
 
-#### Login a User:
-- **Method**: POST
-- **URL**: `/api/v1/users/login`
-- **Body**:
+Layout: `src/github/` (webhooks + API client), `src/review/` (engine, prompt, findings clamping, filters, report rendering), `src/llm/` (fetch-based chat client), `src/server.ts` (node:http). Design doc: [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
-```json
-{
-  "email": "test@example.com",
-  "password": "password123"
-}
-```
+## Roadmap
 
-### Review Endpoints
-
-#### Get All Reviews:
-- **Method**: GET
-- **URL**: `/api/v1/reviews`
-- **Headers**:
-
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-```
-#### Get ReviewById:
-- **Method**: GET
-- **URL**: `/api/v1/reviews/:reviewId`
-- **Headers**:
-
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-```
-
-#### Add a New Review:
-- **Method**: POST
-- **URL**: `/api/v1/reviews`
-- **Headers**:
-
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-Content-Type: application/json
-```
-
-- **Body**:
-
-```json
-{
-  "code": "console.log(\"Hello, World!\");",
-  "modelName": "openai" // openai,qwen,gemini,claude modelnames
-}
-```
-
-#### Delete a Review:
-- **Method**: DELETE
-- **URL**: `/api/v1/reviews/:reviewId`
-- **Headers**:
-
-```
-Authorization: Bearer YOUR_JWT_TOKEN
-```
-
-## Contributing
-
-Contributions are welcome! ✨ Please follow these guidelines:
-
-1. Fork the repository. 🍴
-2. Create a new branch for your feature or bug fix. 🌱
-3. Make your changes and commit them. 🛠️
-4. Push your changes to your fork. 🚀
-5. Submit a pull request to the main branch of the original repository. 📩
+- `/review` comment command to re-request a review
+- Check-run status (optional gating)
+- Queue mode (BullMQ) for high-volume orgs
+- Packaged CLI + GitHub Action wrappers around the same engine
+- GitLab support
 
 ## License
 
-This project is licensed under the GNU GENERAL PUBLIC LICENSE - see the [LICENSE](./LICENSE) file for details. 📜
-
-## Contact
-
-- **Author**: Thrishank Chintham 👤
-- **Email**: rose@blushy.dev / thrishankchintham@gmail.com 📧
-- **GitHub**: [thrishank007](https://github.com/thrishank007) 🌐
+[MIT](LICENSE) © Thrishank Chintham

@@ -1,7 +1,6 @@
 import type { Logger } from "../logger.js";
 import type { PullRequestEvent } from "../types.js";
 import type { ReviewEngine } from "../review/engine.js";
-import { renderFailureBody } from "../review/report.js";
 
 const REVIEWABLE_ACTIONS = new Set(["opened", "synchronize", "ready_for_review"]);
 

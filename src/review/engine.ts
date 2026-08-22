@@ -4,7 +4,7 @@ import { DEFAULT_IGNORES, EMPTY_REPO_CONFIG, parseRepoConfig, SEVERITIES, type R
 import type { GitHubClient } from "../github/client.js";
 import type { LLMClient } from "../llm/client.js";
 import { clampFindings, parseReviewResult } from "./findings.js";
-import { filterFiles, type FilterResult } from "./filters.js";
+import { filterFiles } from "./filters.js";
 import { buildMessages, JSON_REPAIR_USER_PROMPT } from "./prompt.js";
 import { renderDegradedBody, renderFailureBody, renderInlineComment, renderReviewBody } from "./report.js";
 
