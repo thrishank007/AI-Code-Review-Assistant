@@ -1,6 +1,6 @@
 import type { Logger } from "../logger.js";
 import type { Env } from "../config.js";
-import { DEFAULT_IGNORES, parseRepoConfig, SEVERITIES, type RepoConfig } from "../config.js";
+import { DEFAULT_IGNORES, EMPTY_REPO_CONFIG, parseRepoConfig, SEVERITIES, type RepoConfig } from "../config.js";
 import type { GitHubClient } from "../github/client.js";
 import type { LLMClient } from "../llm/client.js";
 import { clampFindings, parseReviewResult } from "./findings.js";
@@ -65,8 +65,7 @@ export class ReviewEngine {
       return { status: "skipped-empty", body: "", inlineComments: [] };
     }
 
-    const { config, error } = await this.loadRepoConfig(req);
-    const configWarnings = error ? [`Invalid ${REPO_CONFIG_PATH}: ${error}; using defaults`] : [];
+    const { config, error } = await this.loadRepoConfig(req);    const configWarnings = error ? [`Invalid ${REPO_CONFIG_PATH}: ${error}; using defaults`] : [];
 
     const ignore = [...DEFAULT_IGNORES, ...config.ignore];
     const maxFiles = config.max_files ?? this.env.MAX_FILES;
@@ -178,11 +177,11 @@ export class ReviewEngine {
         REPO_CONFIG_PATH,
         req.headSha,
       );
-      if (yml === null) return { config: {} };
+      if (yml === null) return { config: EMPTY_REPO_CONFIG };
       return parseRepoConfig(yml);
     } catch (e) {
       this.logger.warn({ err: e }, `Could not read ${REPO_CONFIG_PATH}; using defaults`);
-      return { config: {} };
+      return { config: EMPTY_REPO_CONFIG };
     }
   }
 }

@@ -54,6 +54,9 @@ export const RepoConfigSchema = z.object({
 
 export type RepoConfig = z.infer<typeof RepoConfigSchema>;
 
+/** A repo config with all defaults applied (used when no/invalid .aireview.yml exists). */
+export const EMPTY_REPO_CONFIG: RepoConfig = { ignore: [] };
+
 export interface RepoConfigResult {
   config: RepoConfig;
   /** Set when a .aireview.yml exists but could not be parsed/validated. */
@@ -65,13 +68,13 @@ export function parseRepoConfig(yamlText: string): RepoConfigResult {
   try {
     parsed = parseYaml(yamlText);
   } catch (e) {
-    return { config: {}, error: `YAML parse error: ${(e as Error).message}` };
+    return { config: EMPTY_REPO_CONFIG, error: `YAML parse error: ${(e as Error).message}` };
   }
-  if (parsed == null) return { config: {} };
+  if (parsed == null) return { config: EMPTY_REPO_CONFIG };
   const result = RepoConfigSchema.safeParse(parsed);
   if (!result.success) {
     return {
-      config: {},
+      config: EMPTY_REPO_CONFIG,
       error: result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     };
   }

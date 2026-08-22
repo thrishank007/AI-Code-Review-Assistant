@@ -60,7 +60,7 @@ export interface FilterResult {
 
 export function filterFiles(files: PRFile[], opts: FilterOptions): FilterResult {
   const skipped: { path: string; reason: string }[] = [];
-  const candidates: PRFile[] = [];
+  const candidates: (PRFile & { patch: string })[] = [];
 
   for (const f of files) {
     if (isIgnored(f.filename, opts.ignorePatterns)) {
@@ -71,7 +71,7 @@ export function filterFiles(files: PRFile[], opts: FilterOptions): FilterResult 
       skipped.push({ path: f.filename, reason: "binary or too large for patch" });
       continue;
     }
-    candidates.push(f);
+    candidates.push({ ...f, patch: f.patch });
   }
 
   const result: FilterResult = {
