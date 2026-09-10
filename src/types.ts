@@ -23,6 +23,18 @@ export interface PullRequestEvent {
   };
 }
 
+/** The subset of the `issue_comment` webhook payload we consume for `/review`. */
+export interface IssueCommentEvent {
+  action: string;
+  installation?: { id: number };
+  repository: { name: string; owner: { login: string } };
+  issue: { number: number; pull_request?: unknown };
+  comment: {
+    body: string;
+    user: { login: string; type: string };
+    author_association?: string;
+  };
+}
 /** One problem the LLM reported, before placement validation. */
 export interface Finding {
   file: string;

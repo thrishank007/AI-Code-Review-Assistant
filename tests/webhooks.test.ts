@@ -73,4 +73,29 @@ describe("dispatchWebhookEvent", () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it("routes issue_comment events to the issue-comment handler", async () => {
+    let called = 0;
+    await dispatchWebhookEvent(
+      "issue_comment",
+      { action: "created", comment: { body: "/review" } },
+      {
+        onPullRequest: async () => {},
+        onIssueComment: async () => {
+          called++;
+        },
+        logger,
+      },
+    );
+    expect(called).toBe(1);
+  });
+
+  it("ignores issue_comment when no handler is wired", async () => {
+    await expect(
+      dispatchWebhookEvent("issue_comment", { action: "created" }, {
+        onPullRequest: async () => {},
+        logger,
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

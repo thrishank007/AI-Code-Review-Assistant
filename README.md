@@ -44,7 +44,7 @@ On GitHub: **Settings → Developer settings → GitHub Apps → New GitHub App*
 | Webhook URL | your service's public HTTPS URL, e.g. `https://reviewer.example.com/webhook` |
 | Webhook secret | a random string (→ `WEBHOOK_SECRET`) |
 | Permissions | **Pull requests: Read & write**, **Contents: Read-only** |
-| Subscribe to events | **Pull request** |
+| Subscribe to events | **Pull request**, **Issue comment** (`/review` command) |
 | Where can this app be installed | Only this account / organization (for an internal app) |
 
 After creating it: note the **App ID** (→ `APP_ID`), and under **Private keys** generate a `.pem` (→ `PRIVATE_KEY`). Install the app on the repos you want reviewed.
@@ -121,16 +121,20 @@ Severities: 🔴 `critical` (bug/security/data loss), 🟠 `warning` (likely bug
 
 ```bash
 npm ci
-npm test        # 88 unit/integration tests, all external calls mocked
+npm test        # 97 unit/integration tests, all external calls mocked
 npm run lint
 npm run build   # emits dist/
 ```
 
 Layout: `src/github/` (webhooks + API client), `src/review/` (engine, prompt, findings clamping, filters, report rendering), `src/llm/` (fetch-based chat client), `src/server.ts` (node:http). Design doc: [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
+## Manual re-review
+
+Comment `/review` on any PR to force a fresh review (bypasses the duplicate-SHA skip, works on drafts too). Setup: GitHub App → Permissions (**Pull requests: Read & write**, **Contents: Read-only**) → Subscribe to **Issue comment** events.
+
 ## Roadmap
 
-- `/review` comment command to re-request a review
+- [x] `/review` comment command to re-request a review
 - Check-run status (optional gating)
 - Queue mode (BullMQ) for high-volume orgs
 - Packaged CLI + GitHub Action wrappers around the same engine

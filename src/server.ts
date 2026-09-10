@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Logger } from "./logger.js";
 import { dispatchWebhookEvent, verifyWebhookSignature } from "./github/webhooks.js";
-import type { PullRequestEvent } from "./types.js";
+import type { IssueCommentEvent, PullRequestEvent } from "./types.js";
 
 export interface ServerDeps {
   webhookSecret: string;
   onPullRequest: (payload: PullRequestEvent) => Promise<void>;
+  onIssueComment?: (payload: IssueCommentEvent) => Promise<void>;
   logger: Logger;
 }
 
@@ -63,7 +64,7 @@ export function createAppServer(deps: ServerDeps) {
         void dispatchWebhookEvent(
           typeof event === "string" ? event : "",
           payload,
-          { onPullRequest: d.onPullRequest, logger: d.logger },
+          { onPullRequest: d.onPullRequest, onIssueComment: d.onIssueComment, logger: d.logger },
         );
       });
       return;

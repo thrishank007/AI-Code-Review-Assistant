@@ -9,6 +9,7 @@ export interface OctokitLike {
       listFiles: (params: any) => Promise<{ data: any[] }>;
       listReviews: (params: any) => Promise<{ data: any[] }>;
       createReview: (params: any) => Promise<unknown>;
+      get: (params: any) => Promise<{ data: any }>;
     };
     repos: {
       getContent: (params: any) => Promise<{ data: any }>;
@@ -100,6 +101,24 @@ export class GitHubClient {
     return data.some(
       (r: any) => r.commit_id === headSha && String(r.body ?? "").includes(REVIEW_MARKER),
     );
+  }
+
+  /** Fetch PR title/body/head SHA for `/review` re-requests. */
+  async getPullRequest(
+    installationId: number,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<{ number: number; title: string; body: string | null; draft: boolean; headSha: string }> {
+    const octokit = await this.getOctokit(installationId);
+    const { data } = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+    return {
+      number: data.number,
+      title: data.title,
+      body: data.body ?? null,
+      draft: Boolean(data.draft),
+      headSha: data.head.sha,
+    };
   }
 
   async submitReview(

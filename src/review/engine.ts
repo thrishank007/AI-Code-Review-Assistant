@@ -36,12 +36,13 @@ export class ReviewEngine {
 
   async reviewPullRequest(
     req: ReviewRequest,
-    opts: { dryRun?: boolean } = {},
+    opts: { dryRun?: boolean; force?: boolean } = {},
   ): Promise<ReviewOutcome> {
     const log = this.logger.child({ repo: `${req.owner}/${req.repo}`, pr: req.pullNumber, sha: req.headSha });
     log.info("Starting PR review");
 
     if (
+      !opts.force &&
       await this.github.hasReviewedHead(
         req.installationId,
         req.owner,

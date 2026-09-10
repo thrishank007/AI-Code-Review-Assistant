@@ -4,7 +4,7 @@ import { loadEnv } from "./config.js";
 import { createLogger } from "./logger.js";
 import { createAppServer } from "./server.js";
 import { GitHubClient } from "./github/client.js";
-import { handlePullRequestEvent } from "./github/events.js";
+import { handleIssueCommentEvent, handlePullRequestEvent } from "./github/events.js";
 import { ReviewEngine } from "./review/engine.js";
 import { LLMClient } from "./llm/client.js";
 
@@ -33,6 +33,7 @@ function main(): void {
   const server = createAppServer({
     webhookSecret: env.WEBHOOK_SECRET,
     onPullRequest: (payload) => handlePullRequestEvent(payload, { engine, logger }),
+    onIssueComment: (payload) => handleIssueCommentEvent(payload, { engine, github, logger }),
     logger,
   });
 

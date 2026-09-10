@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Logger } from "../logger.js";
-import type { PullRequestEvent } from "../types.js";
+import type { IssueCommentEvent, PullRequestEvent } from "../types.js";
 
 /**
  * Verify GitHub's X-Hub-Signature-256 header against the raw request body.
@@ -24,6 +24,7 @@ export function verifyWebhookSignature(
 
 export interface WebhookDeps {
   onPullRequest: (payload: PullRequestEvent) => Promise<void>;
+  onIssueComment?: (payload: IssueCommentEvent) => Promise<void>;
   logger: Logger;
 }
 
@@ -40,6 +41,14 @@ export async function dispatchWebhookEvent(
     }
     if (event === "pull_request") {
       await deps.onPullRequest(payload as PullRequestEvent);
+      return;
+    }
+    if (event === "issue_comment") {
+      if (deps.onIssueComment) {
+        await deps.onIssueComment(payload as IssueCommentEvent);
+      } else {
+        deps.logger.debug("Ignoring issue_comment event (no handler)");
+      }
       return;
     }
     deps.logger.debug({ event }, "Ignoring webhook event");

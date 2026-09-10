@@ -49,6 +49,7 @@ function makeGithub(overrides: Record<string, any> = {}) {
         createReview: vi.fn(async (p: any) => {
           (calls.createReview ??= []).push(p);
         }),
+        get: vi.fn(async () => ({ data: {} })),
       },
       repos: {
         getContent: vi.fn(async () => ({
@@ -191,5 +192,18 @@ describe("ReviewEngine.reviewPullRequest", () => {
     await engine.reportFailure(42, "owner", "repo", 7, "boom");
     expect(calls.createComment).toHaveLength(1);
     expect(calls.createComment[0]!.body).toContain("boom");
+  });
+
+  it("force bypasses the duplicate-SHA skip for /review re-requests", async () => {
+    const { github, calls } = makeGithub({
+      reviews: [{ commit_id: "abc", body: `${REVIEW_MARKER} old review` }],
+    });
+    const { llm, chat } = makeLLM([goodLLMJson]);
+    const engine = new ReviewEngine(github, llm, env, logger);
+
+    const outcome = await engine.reviewPullRequest(req, { force: true });
+    expect(outcome.status).toBe("reviewed");
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(calls.createReview).toHaveLength(1);
   });
 });

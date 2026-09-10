@@ -8,6 +8,7 @@ function makeOctokit(overrides: Partial<Record<string, unknown>> = {}): OctokitL
         listFiles: vi.fn(overrides.listFiles as any ?? (() => ({ data: [] }))),
         listReviews: vi.fn(overrides.listReviews as any ?? (() => ({ data: [] }))),
         createReview: vi.fn(overrides.createReview as any ?? (async () => ({}))),
+        get: vi.fn(overrides.get as any ?? (async () => ({ data: {} }))),
       },
       repos: {
         getContent: vi.fn(overrides.getContent as any ?? (async () => ({ data: null }))),
@@ -95,5 +96,15 @@ describe("GitHubClient", () => {
     await expect(clientFor(makeOctokit()).listPRFiles(99, "o", "r", 1)).rejects.toThrow(
       /unknown installation/,
     );
+  });
+
+  it("fetches PR details for /review re-requests", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { number: 7, title: "T", body: "B", draft: false, head: { sha: "abc" } },
+    });
+    const oktokit = makeOctokit({ get });
+    const pr = await clientFor(oktokit).getPullRequest(42, "o", "r", 7);
+    expect(get).toHaveBeenCalledWith({ owner: "o", repo: "r", pull_number: 7 });
+    expect(pr).toEqual({ number: 7, title: "T", body: "B", draft: false, headSha: "abc" });
   });
 });
