@@ -30,6 +30,7 @@ export const EnvSchema = z.object({
   LLM_JSON_MODE: envBool,
   MAX_FILES: z.coerce.number().int().positive().default(30),
   MAX_DIFF_CHARS: z.coerce.number().int().positive().default(120_000),
+  CHECKS_ENABLED: envBool,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -50,6 +51,8 @@ export const RepoConfigSchema = z.object({
   max_files: z.number().int().positive().optional(),
   instructions: z.string().optional(),
   severities: z.array(z.enum(SEVERITIES)).optional(),
+  checks: z.boolean().optional(),
+  fail_on: z.array(z.enum(SEVERITIES)).optional(),
 });
 
 export type RepoConfig = z.infer<typeof RepoConfigSchema>;

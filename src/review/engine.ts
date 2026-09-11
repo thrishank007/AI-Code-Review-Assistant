@@ -63,6 +63,7 @@ export class ReviewEngine {
     );
     if (files.length === 0) {
       log.info("PR has no changed files; skipping");
+      await this.maybePostCheck(req, opts, null, "neutral", "No changed files", "This PR has no changed files to review.");
       return { status: "skipped-empty", body: "", inlineComments: [] };
     }
 
@@ -78,6 +79,14 @@ export class ReviewEngine {
     });
     if (filtered.included.length === 0) {
       log.info({ skipped: filtered.skipped.length }, "All files filtered out; skipping");
+      await this.maybePostCheck(
+        req,
+        opts,
+        config,
+        "neutral",
+        "No reviewable files",
+        `All ${files.length} changed file(s) were ignored or over size caps.`,
+      );
       return { status: "skipped-empty", body: "", inlineComments: [] };
     }
 
@@ -114,6 +123,15 @@ export class ReviewEngine {
           [],
         );
       }
+      await this.maybePostCheck(
+        req,
+        opts,
+        config,
+        "neutral",
+        "Review degraded",
+        "The model did not return structured findings; see the PR review for raw output.",
+        body,
+      );
       return { status: "degraded", body, inlineComments: [] };
     }
 
@@ -145,11 +163,50 @@ export class ReviewEngine {
         inlineComments,
       );
     }
+    const gate = new Set(config.fail_on ?? []);
+    const gated = placed.filter((p) => gate.has(p.finding.severity));
+    const conclusion = gated.length > 0 ? "failure" : placed.length === 0 ? "success" : "neutral";
+    const title =
+      gated.length > 0
+        ? `Found ${gated.length} gated finding(s)`
+        : placed.length === 0
+          ? "No findings"
+          : `Found ${placed.length} finding(s)`;
+    await this.maybePostCheck(req, opts, config, conclusion, title, body, body);
     log.info(
       { findings: placed.length, inline: inlineComments.length, skipped: filtered.skipped.length },
       "PR review complete",
     );
     return { status: "reviewed", body, inlineComments };
+  }
+
+  /** Best-effort check-run; missing Checks permission must never break the review. */
+  private async maybePostCheck(
+    req: ReviewRequest,
+    opts: { dryRun?: boolean },
+    config: RepoConfig | null,
+    conclusion: "success" | "neutral" | "failure",
+    title: string,
+    summary: string,
+    text?: string,
+  ): Promise<void> {
+    if (opts.dryRun) return;
+    if (!this.env.CHECKS_ENABLED) return;
+    if (config && config.checks === false) return;
+    try {
+      await this.github.createCheckRun(
+        req.installationId,
+        req.owner,
+        req.repo,
+        req.headSha,
+        conclusion,
+        title,
+        summary,
+        text,
+      );
+    } catch (e) {
+      this.logger.warn({ err: e }, "Could not create check run; continuing without checks");
+    }
   }
 
   /** Last-resort error report posted as a PR comment (called by the events layer). */

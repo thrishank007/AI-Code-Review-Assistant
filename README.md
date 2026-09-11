@@ -43,7 +43,7 @@ On GitHub: **Settings → Developer settings → GitHub Apps → New GitHub App*
 | GitHub App name | anything, e.g. `ai-pr-reviewer` |
 | Webhook URL | your service's public HTTPS URL, e.g. `https://reviewer.example.com/webhook` |
 | Webhook secret | a random string (→ `WEBHOOK_SECRET`) |
-| Permissions | **Pull requests: Read & write**, **Contents: Read-only** |
+| Permissions | **Pull requests: Read & write**, **Contents: Read-only**, **Checks: Read & write** (for status checks) |
 | Subscribe to events | **Pull request**, **Issue comment** (`/review` command) |
 | Where can this app be installed | Only this account / organization (for an internal app) |
 
@@ -96,6 +96,7 @@ npm run review:pr -- owner/repo#123
 | `LOG_LEVEL` | ➖ | `info` | pino level |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_TOKENS` / `LLM_JSON_MODE` | ➖ | `120000` / `4096` / on | |
 | `MAX_FILES` / `MAX_DIFF_CHARS` | ➖ | `30` / `120000` | Review-size caps |
+| `CHECKS_ENABLED` | ➖ | on | Set `false` to disable check-runs (needs **Checks: Read & write**) |
 
 ### Per-repo config (`.aireview.yml` at repo root, optional)
 
@@ -113,6 +114,12 @@ instructions: "We use Fastify and Vitest. Flag missing await and missing tests."
 
 # Only post findings at these severities (default: all)
 severities: [critical, warning, suggestion]
+
+# Check-runs: set false to skip status checks for this repo
+checks: true
+
+# Fail the check (red X) when these severities appear; default [] = never fail
+fail_on: [critical]
 ```
 
 Severities: 🔴 `critical` (bug/security/data loss), 🟠 `warning` (likely bug/risky), 🔵 `suggestion` (meaningful improvement), ⚪ `nit` (polish).
@@ -121,7 +128,7 @@ Severities: 🔴 `critical` (bug/security/data loss), 🟠 `warning` (likely bug
 
 ```bash
 npm ci
-npm test        # 97 unit/integration tests, all external calls mocked
+npm test        # 102 unit/integration tests, all external calls mocked
 npm run lint
 npm run build   # emits dist/
 ```
@@ -135,7 +142,7 @@ Comment `/review` on any PR to force a fresh review (bypasses the duplicate-SHA 
 ## Roadmap
 
 - [x] `/review` comment command to re-request a review
-- Check-run status (optional gating)
+- [x] Check-run status (optional gating via `fail_on`)
 - Queue mode (BullMQ) for high-volume orgs
 - Packaged CLI + GitHub Action wrappers around the same engine
 - GitLab support

@@ -17,6 +17,9 @@ export interface OctokitLike {
     issues: {
       createComment: (params: any) => Promise<unknown>;
     };
+    checks: {
+      create: (params: any) => Promise<unknown>;
+    };
   };
 }
 
@@ -153,6 +156,32 @@ export class GitHubClient {
       repo,
       issue_number: pullNumber,
       body,
+    });
+  }
+
+  async createCheckRun(
+    installationId: number,
+    owner: string,
+    repo: string,
+    headSha: string,
+    conclusion: "success" | "neutral" | "failure",
+    title: string,
+    summary: string,
+    text?: string,
+  ): Promise<void> {
+    const octokit = await this.getOctokit(installationId);
+    await octokit.rest.checks.create({
+      owner,
+      repo,
+      name: "AI Code Review",
+      head_sha: headSha,
+      status: "completed",
+      conclusion,
+      output: {
+        title: title.slice(0, 255),
+        summary: summary.slice(0, 65_535),
+        text: text?.slice(0, 65_535),
+      },
     });
   }
 }

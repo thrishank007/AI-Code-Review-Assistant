@@ -21,6 +21,7 @@ const env = {
   LLM_JSON_MODE: true,
   MAX_FILES: 30,
   MAX_DIFF_CHARS: 120_000,
+  CHECKS_ENABLED: true,
 } satisfies Env;
 
 const patch = "@@ -1,3 +1,5 @@\n ctx\n+new1\n+new2\n ctx2";
@@ -50,6 +51,11 @@ function makeGithub(overrides: Record<string, any> = {}) {
           (calls.createReview ??= []).push(p);
         }),
         get: vi.fn(async () => ({ data: {} })),
+      },
+      checks: {
+        create: vi.fn(async (p: any) => {
+          (calls.createCheck ??= []).push(p);
+        }),
       },
       repos: {
         getContent: vi.fn(async () => ({
@@ -204,6 +210,52 @@ describe("ReviewEngine.reviewPullRequest", () => {
     const outcome = await engine.reviewPullRequest(req, { force: true });
     expect(outcome.status).toBe("reviewed");
     expect(chat).toHaveBeenCalledTimes(1);
+    expect(calls.createReview).toHaveLength(1);
+  });
+
+  it("posts a neutral check run on reviewed PRs by default", async () => {
+    const { github, calls } = makeGithub();
+    const engine = new ReviewEngine(github, makeLLM([goodLLMJson]).llm, env, logger);
+    await engine.reviewPullRequest(req);
+    expect(calls.createCheck).toHaveLength(1);
+    expect(calls.createCheck[0].conclusion).toBe("neutral");
+    expect(calls.createCheck[0].head_sha).toBe("abc");
+    expect(calls.createCheck[0].name).toBe("AI Code Review");
+  });
+
+  it("posts failure when fail_on severities are hit", async () => {
+    const { github, calls } = makeGithub({
+      repoConfigYml: "fail_on: [critical]",
+    });
+    const engine = new ReviewEngine(github, makeLLM([goodLLMJson]).llm, env, logger);
+    await engine.reviewPullRequest(req);
+    // goodLLMJson has a critical on not/in-diff.ts which lands in summary but still counts as placed
+    expect(calls.createCheck).toHaveLength(1);
+    expect(calls.createCheck[0].conclusion).toBe("failure");
+  });
+
+  it("skips checks on dryRun, when disabled globally, or per-repo", async () => {
+    const { github: g1, calls: c1 } = makeGithub();
+    await new ReviewEngine(g1, makeLLM([goodLLMJson]).llm, env, logger).reviewPullRequest(req, { dryRun: true });
+    expect(c1.createCheck).toBeUndefined();
+
+    const { github: g2, calls: c2 } = makeGithub();
+    await new ReviewEngine(g2, makeLLM([goodLLMJson]).llm, { ...env, CHECKS_ENABLED: false }, logger).reviewPullRequest(req);
+    expect(c2.createCheck).toBeUndefined();
+
+    const { github: g3, calls: c3 } = makeGithub({ repoConfigYml: "checks: false" });
+    await new ReviewEngine(g3, makeLLM([goodLLMJson]).llm, env, logger).reviewPullRequest(req);
+    expect(c3.createCheck).toBeUndefined();
+  });
+
+  it("never fails the review when check creation throws (missing permission)", async () => {
+    const { github, calls } = makeGithub();
+    (github as any).createCheckRun = async () => {
+      throw Object.assign(new Error("Resource not accessible by integration"), { status: 403 });
+    };
+    const engine = new ReviewEngine(github, makeLLM([goodLLMJson]).llm, env, logger);
+    const outcome = await engine.reviewPullRequest(req);
+    expect(outcome.status).toBe("reviewed");
     expect(calls.createReview).toHaveLength(1);
   });
 });

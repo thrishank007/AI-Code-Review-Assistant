@@ -10,6 +10,9 @@ function makeOctokit(overrides: Partial<Record<string, unknown>> = {}): OctokitL
         createReview: vi.fn(overrides.createReview as any ?? (async () => ({}))),
         get: vi.fn(overrides.get as any ?? (async () => ({ data: {} }))),
       },
+      checks: {
+        create: vi.fn(overrides.createCheck as any ?? (async () => ({}))),
+      },
       repos: {
         getContent: vi.fn(overrides.getContent as any ?? (async () => ({ data: null }))),
       },
@@ -106,5 +109,20 @@ describe("GitHubClient", () => {
     const pr = await clientFor(oktokit).getPullRequest(42, "o", "r", 7);
     expect(get).toHaveBeenCalledWith({ owner: "o", repo: "r", pull_number: 7 });
     expect(pr).toEqual({ number: 7, title: "T", body: "B", draft: false, headSha: "abc" });
+  });
+
+  it("creates a completed check run", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const oktokit = makeOctokit({ createCheck: create });
+    await clientFor(oktokit).createCheckRun(42, "o", "r", "abc", "neutral", "Found 2 finding(s)", "summary", "details");
+    expect(create).toHaveBeenCalledWith({
+      owner: "o",
+      repo: "r",
+      name: "AI Code Review",
+      head_sha: "abc",
+      status: "completed",
+      conclusion: "neutral",
+      output: { title: "Found 2 finding(s)", summary: "summary", text: "details" },
+    });
   });
 });

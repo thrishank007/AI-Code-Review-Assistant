@@ -60,12 +60,16 @@ ignore: ["**/*.spec.ts"]
 max_files: 10
 instructions: "Flag missing error handling"
 severities: [critical, warning]
+checks: false
+fail_on: [critical]
 `);
     expect(error).toBeUndefined();
     expect(config.ignore).toEqual(["**/*.spec.ts"]);
     expect(config.max_files).toBe(10);
     expect(config.instructions).toBe("Flag missing error handling");
     expect(config.severities).toEqual(["critical", "warning"]);
+    expect(config.checks).toBe(false);
+    expect(config.fail_on).toEqual(["critical"]);
   });
 
   it("defaults ignore to an array", () => {
