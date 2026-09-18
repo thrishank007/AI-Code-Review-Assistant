@@ -8,65 +8,107 @@ const SEVERITY_ICONS: Record<string, string> = {
   nit: "⚪",
 };
 
+const SEVERITY_ORDER = ["critical", "warning", "suggestion", "nit"] as const;
+
 /** Marker used to recognize our own reviews when deduping webhook redeliveries. */
 export const REVIEW_MARKER = "<!-- ai-pr-reviewer -->";
 
 export interface ReportInput {
   summary: string;
+  overview: string;
+  fileSummaries: { file: string; summary: string }[];
   placed: PlacedFinding[];
   filtered: FilterResult;
   model: string;
   configWarnings: string[];
 }
 
+/** Verdict heading driven by the highest finding severity. */
+export function verdictFor(placed: PlacedFinding[]): string {
+  const severities = new Set(placed.map((p) => p.finding.severity));
+  if (severities.has("critical")) return "🔴 Changes required";
+  if (severities.has("warning")) return "🟡 Changes recommended";
+  if (placed.length > 0) return "💡 Minor suggestions";
+  return "✅ Looks good";
+}
+
 export function renderReviewBody(input: ReportInput): string {
   const lines: string[] = [];
   lines.push(REVIEW_MARKER);
-  lines.push("## 🤖 AI Code Review");
+  lines.push(`## ${verdictFor(input.placed)}`);
   lines.push("");
   lines.push(input.summary.trim() || "No summary provided.");
   lines.push("");
+  lines.push("Get a fresh assessment by commenting `/review`.");
+  lines.push("");
 
-  const counts = { critical: 0, warning: 0, suggestion: 0, nit: 0 };
-  for (const p of input.placed) counts[p.finding.severity]++;
-  const parts: string[] = [];
-  if (counts.critical) parts.push(`🔴 ${counts.critical} critical`);
-  if (counts.warning) parts.push(`🟠 ${counts.warning} warning`);
-  if (counts.suggestion) parts.push(`🔵 ${counts.suggestion} suggestion`);
-  if (counts.nit) parts.push(`⚪ ${counts.nit} nit`);
-
+  // --- Pull request overview ---
+  lines.push("<details>");
+  lines.push("<summary>Pull request overview</summary>");
+  lines.push("");
+  lines.push(input.overview.trim() || input.summary.trim() || "No overview provided.");
+  lines.push("");
+  const stats = input.filtered.included
+    .map((f) => `\`${f.filename}\` (+${f.additions}/-${f.deletions})`)
+    .join(", ");
   lines.push(
-    `**Reviewed ${input.filtered.included.length} files · ${
-      parts.length ? parts.join(" · ") : "no findings 🎉"
-    }**`,
+    `Changed files: ${input.filtered.included.length}${stats ? ` — ${stats}` : ""}`,
   );
+  lines.push("");
+  lines.push("</details>");
+  lines.push("");
 
-  if (input.filtered.skipped.length > 0) {
-    lines.push("");
-    lines.push(
-      `<details><summary>${input.filtered.skipped.length} file(s) skipped (ignored, binary, or over size caps)</summary>`,
-    );
-    lines.push("");
-    for (const s of input.filtered.skipped) lines.push(`- \`${s.path}\` — ${s.reason}`);
-    lines.push("");
-    lines.push("</details>");
+  // --- File summaries ---
+  const summaryByFile = new Map(input.fileSummaries.map((s) => [s.file, s.summary]));
+  lines.push("<details>");
+  lines.push("<summary>File summaries</summary>");
+  lines.push("");
+  lines.push("| File | Summary |");
+  lines.push("| --- | --- |");
+  for (const f of input.filtered.included) {
+    const summary = summaryByFile.get(f.filename) ?? `+${f.additions}/-${f.deletions} changes.`;
+    lines.push(`| \`${f.filename}\` | ${summary.replace(/\n+/g, " ")} |`);
   }
+  lines.push("");
+  lines.push("</details>");
+  lines.push("");
 
-  const unplaced = input.placed.filter((p) => p.line === undefined);
-  if (unplaced.length > 0) {
+  // --- Review details ---
+  lines.push("<details>");
+  lines.push("<summary>Review details</summary>");
+  lines.push("");
+  if (input.placed.length === 0) {
+    lines.push("No findings — the changed lines look clean. 🎉");
     lines.push("");
-    lines.push("### Findings that could not be placed inline");
-    for (const p of unplaced) {
-      const f = p.finding;
-      lines.push(`- **\`${f.file}\`** — ${SEVERITY_ICONS[f.severity]} **${f.title}** (${f.category})`);
-      lines.push(`  - ${f.body.replace(/\n+/g, " ")}`);
+  } else {
+    for (const severity of SEVERITY_ORDER) {
+      const group = input.placed.filter((p) => p.finding.severity === severity);
+      if (group.length === 0) continue;
+      lines.push(`### ${SEVERITY_ICONS[severity]} ${severity} (${group.length})`);
+      lines.push("");
+      for (const p of group) {
+        const f = p.finding;
+        const where = p.line !== undefined ? `\`${f.file}:${p.line}\`` : `\`${f.file}\``;
+        lines.push(`- **${where} — ${f.title}** (${f.category})`);
+        lines.push(`  ${f.body.replace(/\n+/g, "\n  ")}`);
+        lines.push("");
+      }
     }
   }
 
-  if (input.configWarnings.length > 0) {
+  if (input.filtered.skipped.length > 0) {
+    lines.push(
+      `Skipped ${input.filtered.skipped.length} file(s) (ignored, binary, or over size caps): ` +
+        input.filtered.skipped.map((s) => `\`${s.path}\``).join(", "),
+    );
     lines.push("");
-    lines.push(`> ⚠️ ${input.configWarnings.join(" · ")}`);
   }
+
+  if (input.configWarnings.length > 0) {
+    lines.push(`> ⚠️ ${input.configWarnings.join(" · ")}`);
+    lines.push("");
+  }
+  lines.push("</details>");
 
   lines.push("");
   lines.push("---");

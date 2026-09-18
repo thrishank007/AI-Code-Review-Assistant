@@ -20,6 +20,8 @@ describe("parseReviewResult", () => {
   it("parses a clean JSON response", () => {
     expect(parseReviewResult(JSON.stringify(validResult))).toEqual({
       summary: "Adds a login endpoint.",
+      overview: "",
+      fileSummaries: [],
       findings: [
         {
           file: "src/auth.js",
@@ -31,6 +33,17 @@ describe("parseReviewResult", () => {
         },
       ],
     });
+  });
+
+  it("parses overview and file summaries when present", () => {
+    const raw = JSON.stringify({
+      ...validResult,
+      overview: "Adds login.",
+      fileSummaries: [{ file: "src/auth.js", summary: "New endpoint." }],
+    });
+    const result = parseReviewResult(raw);
+    expect(result?.overview).toBe("Adds login.");
+    expect(result?.fileSummaries).toEqual([{ file: "src/auth.js", summary: "New endpoint." }]);
   });
 
   it("parses JSON wrapped in markdown fences", () => {

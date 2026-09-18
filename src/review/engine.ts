@@ -140,6 +140,8 @@ export class ReviewEngine {
     );
     const body = renderReviewBody({
       summary: result.summary,
+      overview: result.overview,
+      fileSummaries: result.fileSummaries,
       placed,
       filtered,
       model: this.env.LLM_MODEL,

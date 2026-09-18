@@ -11,8 +11,15 @@ export const FindingSchema = z.object({
   body: z.string().min(1),
 });
 
+export const FileSummarySchema = z.object({
+  file: z.string().min(1),
+  summary: z.string().min(1),
+});
+
 export const ReviewResultSchema = z.object({
   summary: z.string().default(""),
+  overview: z.string().default(""),
+  fileSummaries: z.array(FileSummarySchema).default([]),
   findings: z.array(FindingSchema).default([]),
 });
 

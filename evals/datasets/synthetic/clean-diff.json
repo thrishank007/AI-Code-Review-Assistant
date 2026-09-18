@@ -1,0 +1,25 @@
+{
+  "id": "clean-diff",
+  "name": "Clean diff with no issues",
+  "description": "A genuinely clean diff (string-concat to template literal, no behavior change). The reviewer should report zero findings; any finding counts against precision.",
+  "category": "synthetic",
+  "pr": {
+    "title": "Use template literal in formatName",
+    "body": "Cosmetic cleanup, no behavior change."
+  },
+  "files": [
+    {
+      "filename": "src/utils/format.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "patch": "@@ -12,3 +12,3 @@\n export function formatName(first: string, last: string): string {\n-  return first + \" \" + last;\n+  return `${first} ${last}`;\n }"
+    }
+  ],
+  "expected": {
+    "findings": [],
+    "minFindings": 0,
+    "maxFindings": 0
+  }
+}

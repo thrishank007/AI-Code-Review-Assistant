@@ -1,0 +1,33 @@
+{
+  "id": "null-deref",
+  "name": "Null dereference after guard removal",
+  "description": "Diff removes the null guard and dereferences a nullable parameter. The reviewer should flag a warning about the potential null dereference.",
+  "category": "golden",
+  "pr": {
+    "title": "Simplify displayName",
+    "body": "Remove the Anonymous fallback; callers should always pass a user now."
+  },
+  "files": [
+    {
+      "filename": "src/users/profile.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "patch": "@@ -18,5 +18,5 @@\n import type { User } from \"./types\";\n export function displayName(user: User | null): string {\n-  if (!user) return \"Anonymous\";\n-  return user.name;\n+  const upper = user.name.toUpperCase();\n+  return `${upper} (${user.id})`;\n }"
+    }
+  ],
+  "expected": {
+    "findings": [
+      {
+        "file": "src/users/profile.ts",
+        "lineRange": [20, 21],
+        "severity": "warning",
+        "category": "bug",
+        "titlePattern": "null|deref|guard|optional|undefined|nil"
+      }
+    ],
+    "minFindings": 1,
+    "maxFindings": 3
+  }
+}

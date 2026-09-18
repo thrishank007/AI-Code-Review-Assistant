@@ -36,6 +36,8 @@ describe("buildMessages", () => {
     expect(messages[0]!.content).toBe(SYSTEM_PROMPT);
     expect(SYSTEM_PROMPT).toMatch(/ONLY a single valid JSON object/);
     expect(SYSTEM_PROMPT).toMatch(/"severity"/);
+    expect(SYSTEM_PROMPT).toMatch(/"overview"/);
+    expect(SYSTEM_PROMPT).toMatch(/"fileSummaries"/);
   });
 
   it("user message includes PR context, file stats, diffs, and instructions", () => {

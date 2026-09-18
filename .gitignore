@@ -7,3 +7,5 @@ coverage/
 .DS_Store
 *.log
 .zcode/
+evals/reports/*
+!evals/reports/.gitkeep

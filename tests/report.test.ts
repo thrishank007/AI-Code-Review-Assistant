@@ -5,6 +5,7 @@ import {
   renderInlineComment,
   renderReviewBody,
   REVIEW_MARKER,
+  verdictFor,
 } from "../src/review/report.js";
 import type { FilterResult } from "../src/review/filters.js";
 import type { Finding, PlacedFinding } from "../src/types.js";
@@ -37,59 +38,81 @@ function finding(over: Partial<Finding> = {}): Finding {
   };
 }
 
+const baseInput = {
+  summary: "Address the off-by-one and the unplaced finding.",
+  overview: "This PR changes the main loop.",
+  fileSummaries: [{ file: "src/app.ts", summary: "Reworks the main loop." }],
+  placed: [
+    { finding: finding(), line: 2 },
+    { finding: finding({ severity: "critical", file: "gone.ts" }), reason: "file-not-in-diff" },
+  ] as PlacedFinding[],
+  filtered,
+  model: "qwen2.5-coder:7b",
+  configWarnings: [] as string[],
+};
+
+describe("verdictFor", () => {
+  it("escalates with the highest severity", () => {
+    expect(verdictFor([])).toContain("Looks good");
+    expect(verdictFor([{ finding: finding({ severity: "nit" }) }])).toContain("Minor suggestions");
+    expect(verdictFor([{ finding: finding({ severity: "suggestion" }) }])).toContain("Minor suggestions");
+    expect(verdictFor(baseInput.placed)).toContain("Changes required");
+    expect(verdictFor([{ finding: finding() }])).toContain("Changes recommended");
+  });
+});
+
 describe("renderReviewBody", () => {
-  const body = renderReviewBody({
-    summary: "Solid change overall.",
-    placed: [
-      { finding: finding() },
-      { finding: finding({ severity: "critical", file: "gone.ts" }), reason: "file-not-in-diff" },
-    ] as PlacedFinding[],
-    filtered,
-    model: "qwen2.5-coder:7b",
-    configWarnings: [],
-  });
+  const body = renderReviewBody(baseInput);
 
-  it("starts with the dedupe marker and heading", () => {
+  it("starts with the dedupe marker and a verdict heading", () => {
     expect(body.startsWith(REVIEW_MARKER)).toBe(true);
-    expect(body).toContain("## 🤖 AI Code Review");
+    expect(body).toContain("## 🔴 Changes required");
   });
 
-  it("includes summary, counts, and model footer", () => {
-    expect(body).toContain("Solid change overall.");
-    expect(body).toContain("Reviewed 1 files");
-    expect(body).toContain("🔴 1 critical");
-    expect(body).toContain("🟠 1 warning");
+  it("includes summary, overview, and model footer", () => {
+    expect(body).toContain("Address the off-by-one");
+    expect(body).toContain("This PR changes the main loop.");
+    expect(body).toContain("commenting `/review`");
     expect(body).toContain("`qwen2.5-coder:7b`");
   });
 
-  it("lists skipped files in a collapsed section", () => {
-    expect(body).toContain("dist/bundle.js");
-    expect(body).toContain("ignored by config");
-    expect(body).toContain("<details>");
+  it("renders the three Copilot-style collapsed sections", () => {
+    expect(body).toContain("<summary>Pull request overview</summary>");
+    expect(body).toContain("<summary>File summaries</summary>");
+    expect(body).toContain("<summary>Review details</summary>");
   });
 
-  it("surfaces unplaceable findings in their own section", () => {
-    expect(body).toContain("could not be placed inline");
+  it("renders a file summary table row per changed file", () => {
+    expect(body).toContain("| `src/app.ts` | Reworks the main loop. |");
+  });
+
+  it("groups findings by severity inside Review details", () => {
+    expect(body).toContain("### 🟠 warning (1)");
+    expect(body).toContain("### 🔴 critical (1)");
+    expect(body).toContain("`src/app.ts:2` — Off-by-one");
     expect(body).toContain("`gone.ts`");
   });
 
-  it("celebrates clean diffs", () => {
+  it("notes skipped files compactly", () => {
+    expect(body).toContain("`dist/bundle.js`");
+  });
+
+  it("celebrates clean diffs but keeps overview sections", () => {
     const clean = renderReviewBody({
-      summary: "Looks good.",
+      ...baseInput,
       placed: [],
+      fileSummaries: [],
       filtered: { ...filtered, skipped: [] },
-      model: "m",
-      configWarnings: [],
     });
-    expect(clean).toContain("no findings 🎉");
+    expect(clean).toContain("## ✅ Looks good");
+    expect(clean).toContain("No findings");
+    expect(clean).toContain("<summary>File summaries</summary>");
   });
 
   it("includes config warnings", () => {
     const warn = renderReviewBody({
-      summary: "s",
-      placed: [],
+      ...baseInput,
       filtered: { ...filtered, skipped: [] },
-      model: "m",
       configWarnings: ["Invalid .aireview.yml: boom"],
     });
     expect(warn).toContain("Invalid .aireview.yml: boom");

@@ -1,0 +1,33 @@
+{
+  "id": "missing-await",
+  "name": "Floating promise in async fan-out",
+  "description": "Diff maps over events with an async publish call but never awaits the resulting promises. The reviewer should flag a warning about the missing await / floating promises.",
+  "category": "golden",
+  "pr": {
+    "title": "Batch-publish domain events",
+    "body": "Fire off publish for every event, then record the metric."
+  },
+  "files": [
+    {
+      "filename": "src/events/publisher.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "patch": "@@ -30,3 +30,5 @@\n import { publish } from \"./client\";\n export async function publishAll(events: AppEvent[]): Promise<void> {\n+  events.map((event) => publish(event));\n+  metrics.increment(\"events.published\", events.length);\n }"
+    }
+  ],
+  "expected": {
+    "findings": [
+      {
+        "file": "src/events/publisher.ts",
+        "lineRange": [32, 33],
+        "severity": "warning",
+        "category": "bug",
+        "titlePattern": "await|promise|floating|unawaited|async"
+      }
+    ],
+    "minFindings": 1,
+    "maxFindings": 3
+  }
+}

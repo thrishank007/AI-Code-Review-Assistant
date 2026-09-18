@@ -15,7 +15,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "lint": "eslint .",
-    "review:pr": "tsx scripts/review-pr.ts"
+    "review:pr": "tsx scripts/review-pr.ts",
+    "eval": "tsx evals/src/cli.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

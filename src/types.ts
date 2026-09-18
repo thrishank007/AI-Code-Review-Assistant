@@ -45,8 +45,16 @@ export interface Finding {
   body: string;
 }
 
+/** One-sentence summary of a single changed file, as reported by the LLM. */
+export interface FileSummary {
+  file: string;
+  summary: string;
+}
+
 export interface ReviewResult {
   summary: string;
+  overview: string;
+  fileSummaries: FileSummary[];
   findings: Finding[];
 }
 

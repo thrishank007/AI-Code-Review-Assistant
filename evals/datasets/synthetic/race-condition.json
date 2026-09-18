@@ -1,0 +1,33 @@
+{
+  "id": "race-condition",
+  "name": "Read-modify-write race on shared state",
+  "description": "Diff reads shared module state into a local, awaits I/O, then writes back — a classic lost-update race under concurrency. The reviewer should flag a warning.",
+  "category": "synthetic",
+  "pr": {
+    "title": "Persist counter to DB",
+    "body": "Keep the in-memory counter but persist every update."
+  },
+  "files": [
+    {
+      "filename": "src/counter/store.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0,
+      "changes": 3,
+      "patch": "@@ -40,4 +40,7 @@\n let total = 0;\n export async function add(amount: number): Promise<number> {\n+  const current = total;\n+  await persist(current + amount);\n+  total = current + amount;\n   return total;\n }"
+    }
+  ],
+  "expected": {
+    "findings": [
+      {
+        "file": "src/counter/store.ts",
+        "lineRange": [42, 44],
+        "severity": "warning",
+        "category": "concurrency",
+        "titlePattern": "race|concurr|atomic|synchron|lock|lost update"
+      }
+    ],
+    "minFindings": 1,
+    "maxFindings": 3
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "sql-injection",
+  "name": "SQL injection via string interpolation",
+  "description": "Diff replaces a parameterized query with raw string interpolation of user input. The reviewer should flag a critical security finding on the interpolated lines.",
+  "category": "golden",
+  "pr": {
+    "title": "Add email lookup for admin panel",
+    "body": "Quick helper to fetch users by email for the admin panel."
+  },
+  "files": [
+    {
+      "filename": "src/db/users.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "changes": 4,
+      "patch": "@@ -8,4 +8,6 @@\n import { db } from \"./client\";\n export async function findUserByEmail(email: string) {\n-  return db.query(\"SELECT * FROM users WHERE email = $1\", [email]);\n+  const query = `SELECT * FROM users WHERE email = '${email}'`;\n+  const rows = await db.query(query);\n+  return rows;\n }"
+    }
+  ],
+  "expected": {
+    "findings": [
+      {
+        "file": "src/db/users.ts",
+        "lineRange": [10, 12],
+        "severity": "critical",
+        "category": "security",
+        "titlePattern": "sql|inject",
+        "bodyPattern": "parameter|sanitiz|interpolat|escap"
+      }
+    ],
+    "minFindings": 1,
+    "maxFindings": 3
+  }
+}
