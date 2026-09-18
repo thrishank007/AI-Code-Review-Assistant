@@ -6,7 +6,7 @@ export const FindingSchema = z.object({
   file: z.string().min(1),
   line: z.number().int().positive(),
   severity: z.enum(SEVERITIES),
-  category: z.string().default("general"),
+  confidence: z.enum(["high", "medium"]).default("high"),
   title: z.string().min(1),
   body: z.string().min(1),
 });

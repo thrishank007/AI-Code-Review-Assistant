@@ -40,7 +40,7 @@ export interface Finding {
   file: string;
   line: number;
   severity: "critical" | "warning" | "suggestion" | "nit";
-  category: string;
+  confidence: "high" | "medium";
   title: string;
   body: string;
 }

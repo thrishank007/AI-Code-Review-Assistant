@@ -89,7 +89,7 @@ export function renderReviewBody(input: ReportInput): string {
       for (const p of group) {
         const f = p.finding;
         const where = p.line !== undefined ? `\`${f.file}:${p.line}\`` : `\`${f.file}\``;
-        lines.push(`- **${where} — ${f.title}** (${f.category})`);
+        lines.push(`- **${where} — ${f.title}** (${f.confidence})`);
         lines.push(`  ${f.body.replace(/\n+/g, "\n  ")}`);
         lines.push("");
       }
@@ -118,13 +118,13 @@ export function renderReviewBody(input: ReportInput): string {
 
 export function renderInlineComment(finding: {
   severity: string;
-  category: string;
+  confidence: string;
   title: string;
   body: string;
 }): string {
   return `**${SEVERITY_ICONS[finding.severity] ?? "⚪"} ${
     finding.severity
-  } · ${finding.category} — ${finding.title}**\n\n${finding.body}`;
+  } · ${finding.confidence} — ${finding.title}**\n\n${finding.body}`;
 }
 
 export function renderDegradedBody(rawText: string, model: string): string {
