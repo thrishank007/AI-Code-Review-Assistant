@@ -31,7 +31,7 @@ function finding(over: Partial<Finding> = {}): Finding {
     file: "src/app.ts",
     line: 2,
     severity: "warning",
-    category: "bug",
+    confidence: "high",
     title: "Off-by-one",
     body: "Loop exits early. Use `i <= n`.",
     ...over,
@@ -120,9 +120,9 @@ describe("renderReviewBody", () => {
 });
 
 describe("renderInlineComment", () => {
-  it("formats severity icon, category, title, and body", () => {
-    const c = renderInlineComment(finding({ severity: "critical", category: "security" }));
-    expect(c).toContain("🔴 critical · security — Off-by-one");
+  it("formats severity icon, confidence, title, and body", () => {
+    const c = renderInlineComment(finding({ severity: "critical", confidence: "high" }));
+    expect(c).toContain("🔴 critical · high — Off-by-one");
     expect(c).toContain("Loop exits early.");
   });
 });

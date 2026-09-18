@@ -9,7 +9,7 @@ const validResult = {
       file: "src/auth.js",
       line: 12,
       severity: "critical",
-      category: "security",
+      confidence: "high",
       title: "SQL injection in login query",
       body: "Concatenates user input into the query. Use parameterized queries.",
     },
@@ -27,7 +27,7 @@ describe("parseReviewResult", () => {
           file: "src/auth.js",
           line: 12,
           severity: "critical",
-          category: "security",
+          confidence: "high",
           title: "SQL injection in login query",
           body: "Concatenates user input into the query. Use parameterized queries.",
         },
@@ -58,7 +58,7 @@ describe("parseReviewResult", () => {
 
   it("defaults missing optional fields", () => {
     const raw = JSON.stringify({ summary: "s", findings: [{ file: "a.ts", line: 1, severity: "nit", title: "t", body: "b" }] });
-    expect(parseReviewResult(raw)?.findings[0]!.category).toBe("general");
+    expect(parseReviewResult(raw)?.findings[0]!.confidence).toBe("high");
   });
 
   it("returns null for garbage", () => {
