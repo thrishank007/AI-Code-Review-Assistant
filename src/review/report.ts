@@ -19,7 +19,6 @@ export interface ReportInput {
   fileSummaries: { file: string; summary: string }[];
   placed: PlacedFinding[];
   filtered: FilterResult;
-  model: string;
   configWarnings: string[];
 }
 
@@ -112,7 +111,7 @@ export function renderReviewBody(input: ReportInput): string {
 
   lines.push("");
   lines.push("---");
-  lines.push(`*Self-hosted ai-pr-reviewer · model: \`${input.model}\`*`);
+  lines.push(`*Self-hosted ai-pr-reviewer*`);
   return lines.join("\n");
 }
 
@@ -127,7 +126,7 @@ export function renderInlineComment(finding: {
   } · ${finding.confidence} — ${finding.title}**\n\n${finding.body}`;
 }
 
-export function renderDegradedBody(rawText: string, model: string): string {
+export function renderDegradedBody(rawText: string): string {
   return [
     REVIEW_MARKER,
     "## 🤖 AI Code Review",
@@ -137,7 +136,7 @@ export function renderDegradedBody(rawText: string, model: string): string {
     rawText.trim(),
     "",
     "---",
-    `*Self-hosted ai-pr-reviewer · model: \`${model}\`*`,
+    `*Self-hosted ai-pr-reviewer*`,
   ].join("\n");
 }
 

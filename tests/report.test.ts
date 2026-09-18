@@ -47,7 +47,6 @@ const baseInput = {
     { finding: finding({ severity: "critical", file: "gone.ts" }), reason: "file-not-in-diff" },
   ] as PlacedFinding[],
   filtered,
-  model: "qwen2.5-coder:7b",
   configWarnings: [] as string[],
 };
 
@@ -69,11 +68,11 @@ describe("renderReviewBody", () => {
     expect(body).toContain("## 🔴 Changes required");
   });
 
-  it("includes summary, overview, and model footer", () => {
+  it("includes summary, overview, and footer", () => {
     expect(body).toContain("Address the off-by-one");
     expect(body).toContain("This PR changes the main loop.");
     expect(body).toContain("commenting `/review`");
-    expect(body).toContain("`qwen2.5-coder:7b`");
+    expect(body).toContain("Self-hosted ai-pr-reviewer");
   });
 
   it("renders the three Copilot-style collapsed sections", () => {

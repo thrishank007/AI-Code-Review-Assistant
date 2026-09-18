@@ -112,7 +112,7 @@ export class ReviewEngine {
 
     if (!result) {
       log.warn("LLM response still unparseable; posting degraded raw review");
-      const body = renderDegradedBody(raw, this.env.LLM_MODEL);
+      const body = renderDegradedBody(raw);
       if (!opts.dryRun) {
         await this.github.submitReview(
           req.installationId,
@@ -144,7 +144,6 @@ export class ReviewEngine {
       fileSummaries: result.fileSummaries,
       placed,
       filtered,
-      model: this.env.LLM_MODEL,
       configWarnings,
     });
     const inlineComments = placed
