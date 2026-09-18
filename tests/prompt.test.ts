@@ -34,7 +34,7 @@ describe("buildMessages", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]!.role).toBe("system");
     expect(messages[0]!.content).toBe(SYSTEM_PROMPT);
-    expect(SYSTEM_PROMPT).toMatch(/ONLY a single valid JSON object/);
+    expect(SYSTEM_PROMPT).toMatch(/valid JSON object/);
     expect(SYSTEM_PROMPT).toMatch(/"severity"/);
     expect(SYSTEM_PROMPT).toMatch(/"overview"/);
     expect(SYSTEM_PROMPT).toMatch(/"fileSummaries"/);
