@@ -9,3 +9,13 @@ coverage/
 .zcode/
 evals/reports/*
 !evals/reports/.gitkeep
+.agents
+.agent
+.claude/
+.grok/
+.kiro/
+.windsurf/
+.cline/
+/opencode/
+skills-lock.json
+/data/
