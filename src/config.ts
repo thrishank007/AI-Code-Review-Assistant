@@ -28,9 +28,33 @@ export const EnvSchema = z.object({
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
   LLM_JSON_MODE: envBool,
+  /**
+   * `ai-sdk` (default) drives the router through the Vercel AI SDK and enables
+   * tool calling; `openai-compatible` keeps the original plain-fetch client.
+   */
+  LLM_PROVIDER: z.enum(["openai-compatible", "ai-sdk"]).default("ai-sdk"),
   MAX_FILES: z.coerce.number().int().positive().default(30),
   MAX_DIFF_CHARS: z.coerce.number().int().positive().default(120_000),
   CHECKS_ENABLED: envBool,
+
+  // --- Agent loop (tool calling) -------------------------------------------
+  /** Let the model fetch extra context (full files, search, history) before reviewing. */
+  AGENT_TOOLS_ENABLED: envBool,
+  /** Hard ceiling on model <-> tool round trips per review. */
+  AGENT_MAX_STEPS: z.coerce.number().int().positive().default(10),
+
+  // --- Jev decision layer (TypeSafe AI) ------------------------------------
+  TYPESAFE_API_KEY: z.string().min(1).optional(),
+  TYPESAFE_BASE_URL: z.string().url().optional(),
+  JEV_MODEL: z.string().min(1).optional(),
+  JEV_ENABLED: envBool,
+  /** Findings whose Jev confidence (0-100) is below this are dropped. */
+  JEV_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(100).default(60),
+  JEV_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+
+  // --- Feedback store (SQLite) ---------------------------------------------
+  FEEDBACK_ENABLED: envBool,
+  FEEDBACK_DB_PATH: z.string().min(1).default("./data/feedback.sqlite"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -53,6 +77,19 @@ export const RepoConfigSchema = z.object({
   severities: z.array(z.enum(SEVERITIES)).optional(),
   checks: z.boolean().optional(),
   fail_on: z.array(z.enum(SEVERITIES)).optional(),
+  /** Per-repo model overrides, selected by the Jev complexity router. */
+  models: z
+    .object({
+      default: z.string().min(1).optional(),
+      simple: z.string().min(1).optional(),
+      moderate: z.string().min(1).optional(),
+      complex: z.string().min(1).optional(),
+    })
+    .optional(),
+  /** Learn reviewer preferences from developer replies for this repo. */
+  feedback: z.boolean().optional(),
+  /** Skip the Jev decision layer for this repo. */
+  jev: z.boolean().optional(),
 });
 
 export type RepoConfig = z.infer<typeof RepoConfigSchema>;
@@ -83,6 +120,9 @@ export function parseRepoConfig(yamlText: string): RepoConfigResult {
   }
   return { config: result.data };
 }
+
+/** How the Jev router classifies a pull request. */
+export type PRComplexity = "simple" | "moderate" | "complex";
 
 /** Glob patterns always ignored, merged with repo-level `ignore`. */
 export const DEFAULT_IGNORES: string[] = [
