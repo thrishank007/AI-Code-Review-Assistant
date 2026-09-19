@@ -1,6 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { Logger } from "../logger.js";
-import type { IssueCommentEvent, PullRequestEvent } from "../types.js";
 
 /**
  * Verify GitHub's X-Hub-Signature-256 header against the raw request body.
@@ -23,9 +21,10 @@ export function verifyWebhookSignature(
 }
 
 export interface WebhookDeps {
-  onPullRequest: (payload: PullRequestEvent) => Promise<void>;
-  onIssueComment?: (payload: IssueCommentEvent) => Promise<void>;
-  logger: Logger;
+  logger: import("../logger.js").Logger;
+  onPullRequest: (payload: any) => Promise<void>;
+  onIssueComment?: (payload: any) => Promise<void>;
+  onReviewComment?: (payload: any) => Promise<void>;
 }
 
 /** Route a verified webhook payload by its event name. Never throws. */
@@ -40,14 +39,22 @@ export async function dispatchWebhookEvent(
       return;
     }
     if (event === "pull_request") {
-      await deps.onPullRequest(payload as PullRequestEvent);
+      await deps.onPullRequest(payload);
       return;
     }
     if (event === "issue_comment") {
       if (deps.onIssueComment) {
-        await deps.onIssueComment(payload as IssueCommentEvent);
+        await deps.onIssueComment(payload);
       } else {
         deps.logger.debug("Ignoring issue_comment event (no handler)");
+      }
+      return;
+    }
+    if (event === "pull_request_review_comment") {
+      if (deps.onReviewComment) {
+        await deps.onReviewComment(payload);
+      } else {
+        deps.logger.debug("Ignoring pull_request_review_comment event (no handler)");
       }
       return;
     }

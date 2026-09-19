@@ -1,32 +1,49 @@
-import type { App } from "octokit";
-import type { PRFile } from "../types.js";
 import { REVIEW_MARKER } from "../review/report.js";
 
-/** The narrow slice of Octokit's REST client the reviewer uses (easy to fake in tests). */
-export interface OctokitLike {
-  rest: {
-    pulls: {
-      listFiles: (params: any) => Promise<{ data: any[] }>;
-      listReviews: (params: any) => Promise<{ data: any[] }>;
-      createReview: (params: any) => Promise<unknown>;
-      get: (params: any) => Promise<{ data: any }>;
-    };
-    repos: {
-      getContent: (params: any) => Promise<{ data: any }>;
-    };
-    issues: {
-      createComment: (params: any) => Promise<unknown>;
-    };
-    checks: {
-      create: (params: any) => Promise<unknown>;
-    };
+function normalizeDirPath(path: string): string {
+  return path.replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+export interface ReviewCommentDetail {
+  id: number;
+  body: string;
+  path: string | null;
+  line: number | null;
+  user: { login: string; type?: string };
+  inReplyToId?: number;
+}
+
+function toReviewCommentDetail(c: any): ReviewCommentDetail {
+  return {
+    id: Number(c?.id ?? 0),
+    body: String(c?.body ?? ""),
+    path: c?.path ?? null,
+    line: typeof c?.line === "number" ? c.line : null,
+    user: { login: String(c?.user?.login ?? ""), ...(c?.user?.type ? { type: c.user.type } : {}) },
+    ...(typeof c?.in_reply_to_id === "number" ? { inReplyToId: c.in_reply_to_id } : {}),
   };
 }
 
-export interface ReviewComment {
-  path: string;
-  line: number;
-  body: string;
+/** Loose octokit shape the client needs; real and fake octokits both satisfy it. */
+export interface OctokitLike {
+  rest: {
+    pulls: {
+      listFiles: (params: any) => Promise<any>;
+      listReviews: (params: any) => Promise<any>;
+      createReview: (params: any) => Promise<any>;
+      get: (params: any) => Promise<any>;
+      listReviewComments: (params: any) => Promise<any>;
+      getReviewComment: (params: any) => Promise<any>;
+      createReplyForReviewComment: (params: any) => Promise<any>;
+    };
+    repos: {
+      getContent: (params: any) => Promise<any>;
+      listCommits: (params: any) => Promise<any>;
+    };
+    search: { code: (params: any) => Promise<any> };
+    issues: { createComment: (params: any) => Promise<any> };
+    checks: { create: (params: any) => Promise<any> };
+  };
 }
 
 /**
@@ -35,22 +52,15 @@ export interface ReviewComment {
  * factory so tests never touch the network.
  */
 export class GitHubClient {
-  constructor(
-    private readonly getOctokit: (installationId: number) => Promise<OctokitLike>,
-  ) {}
+  constructor(private readonly getOctokit: (installationId: number) => Promise<OctokitLike>) {}
 
-  static fromApp(app: App): GitHubClient {
+  static fromApp(app: { getInstallationOctokit: (id: number) => Promise<OctokitLike> }): GitHubClient {
     return new GitHubClient((installationId) => app.getInstallationOctokit(installationId));
   }
 
-  async listPRFiles(
-    installationId: number,
-    owner: string,
-    repo: string,
-    pullNumber: number,
-  ): Promise<PRFile[]> {
+  async listPRFiles(installationId: number, owner: string, repo: string, pullNumber: number) {
     const octokit = await this.getOctokit(installationId);
-    const files: PRFile[] = [];
+    const files: any[] = [];
     for (let page = 1; page <= 10; page++) {
       const { data } = await octokit.rest.pulls.listFiles({
         owner,
@@ -59,7 +69,7 @@ export class GitHubClient {
         per_page: 100,
         page,
       });
-      files.push(...(data as PRFile[]));
+      files.push(...data);
       if (data.length < 100) break;
     }
     return files;
@@ -80,8 +90,8 @@ export class GitHubClient {
         return Buffer.from(data.content, "base64").toString("utf8");
       }
       return null;
-    } catch (e) {
-      if ((e as any)?.status === 404) return null;
+    } catch (e: any) {
+      if (e?.status === 404) return null;
       throw e;
     }
   }
@@ -130,7 +140,7 @@ export class GitHubClient {
     repo: string,
     pullNumber: number,
     body: string,
-    comments: ReviewComment[],
+    comments: { path: string; line: number; body: string }[],
   ): Promise<void> {
     const octokit = await this.getOctokit(installationId);
     await octokit.rest.pulls.createReview({
@@ -157,6 +167,164 @@ export class GitHubClient {
       issue_number: pullNumber,
       body,
     });
+  }
+
+  /** Directory listing (or a single-entry listing when `path` is a file). */
+  async listDirectory(
+    installationId: number,
+    owner: string,
+    repo: string,
+    path: string,
+    ref: string,
+  ): Promise<{ name: string; path: string; type: string; size?: number }[]> {
+    const octokit = await this.getOctokit(installationId);
+    try {
+      const { data } = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: normalizeDirPath(path),
+        ref,
+      });
+      const entries = Array.isArray(data) ? data : [data];
+      return entries.map((e: any) => ({
+        name: String(e?.name ?? ""),
+        path: String(e?.path ?? ""),
+        type: e?.type ?? "file",
+        ...(typeof e?.size === "number" ? { size: e.size } : {}),
+      }));
+    } catch (e: any) {
+      if (e?.status === 404) return [];
+      throw e;
+    }
+  }
+
+  /** Search the repository's code (GitHub code search, scoped to this repo). */
+  async searchCode(
+    installationId: number,
+    owner: string,
+    repo: string,
+    query: string,
+    limit = 10,
+  ): Promise<{ path: string; excerpt?: string }[]> {
+    const octokit = await this.getOctokit(installationId);
+    const { data } = await octokit.rest.search.code({
+      q: `${query} repo:${owner}/${repo}`,
+      per_page: Math.min(Math.max(limit, 1), 30),
+    });
+    return (data?.items ?? []).slice(0, limit).map((item: any) => {
+      const fragment = item?.text_matches?.[0]?.fragment;
+      return {
+        path: String(item?.path ?? ""),
+        ...(fragment ? { excerpt: fragment.trim().slice(0, 400) } : {}),
+      };
+    });
+  }
+
+  /** Recent commits touching a single path, newest first. */
+  async listFileCommits(
+    installationId: number,
+    owner: string,
+    repo: string,
+    path: string,
+    ref: string,
+    perPage = 5,
+  ): Promise<{ sha: string; message: string; author?: string; date?: string }[]> {
+    const octokit = await this.getOctokit(installationId);
+    const { data } = await octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      path,
+      sha: ref,
+      per_page: Math.min(Math.max(perPage, 1), 20),
+    });
+    return (data ?? []).map((c: any) => ({
+      sha: String(c?.sha ?? "").slice(0, 7),
+      message: String(c?.commit?.message ?? "").split("\n")[0] ?? "",
+      ...(c?.commit?.author?.name ? { author: String(c.commit.author.name) } : {}),
+      ...(c?.commit?.author?.date ? { date: String(c.commit.author.date) } : {}),
+    }));
+  }
+
+  /** All inline review comments on a PR (used for threads and feedback). */
+  async listReviewComments(
+    installationId: number,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<ReviewCommentDetail[]> {
+    const octokit = await this.getOctokit(installationId);
+    const data: any[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const res = await octokit.rest.pulls.listReviewComments({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      });
+      data.push(...(res.data ?? []));
+      if ((res.data ?? []).length < 100) break;
+    }
+    return data.map(toReviewCommentDetail);
+  }
+
+  async getReviewComment(
+    installationId: number,
+    owner: string,
+    repo: string,
+    commentId: number,
+  ): Promise<ReviewCommentDetail | null> {
+    const octokit = await this.getOctokit(installationId);
+    try {
+      const { data } = await octokit.rest.pulls.getReviewComment({
+        owner,
+        repo,
+        comment_id: commentId,
+      });
+      return toReviewCommentDetail(data);
+    } catch (e: any) {
+      if (e?.status === 404) return null;
+      throw e;
+    }
+  }
+
+  /** The comment a reply targets plus every reply beneath it, oldest first. */
+  async getReviewCommentThread(
+    installationId: number,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    commentId: number,
+  ): Promise<{ parent: ReviewCommentDetail | null; replies: ReviewCommentDetail[] }> {
+    const [parent, all] = await Promise.all([
+      this.getReviewComment(installationId, owner, repo, commentId),
+      this.listReviewComments(installationId, owner, repo, pullNumber),
+    ]);
+    const replies = all
+      .filter((c) => c.inReplyToId === commentId)
+      .sort((a, b) => a.id - b.id);
+    return { parent, replies };
+  }
+
+  /** Post a reply under an existing inline review comment. */
+  async replyToReviewComment(
+    installationId: number,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    commentId: number,
+    body: string,
+  ): Promise<number | null> {
+    const octokit = await this.getOctokit(installationId);
+    const res = await octokit.rest.pulls.createReplyForReviewComment({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      comment_id: commentId,
+      body,
+    });
+    const id = res?.data?.id;
+    return typeof id === "number" ? id : null;
   }
 
   async createCheckRun(

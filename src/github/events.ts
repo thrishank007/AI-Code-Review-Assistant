@@ -1,19 +1,6 @@
-import type { Logger } from "../logger.js";
-import type { IssueCommentEvent, PullRequestEvent } from "../types.js";
-import type { GitHubClient } from "./client.js";
-import type { ReviewEngine } from "../review/engine.js";
+import { isOurInlineComment } from "../review/report.js";
 
 const REVIEWABLE_ACTIONS = new Set(["opened", "synchronize", "ready_for_review"]);
-
-export interface EventDeps {
-  engine: ReviewEngine;
-  logger: Logger;
-}
-
-export interface IssueCommentDeps extends EventDeps {
-  github: GitHubClient;
-}
-
 const REVIEW_COMMAND_RE = /^\/review\b/i;
 
 /** True when a comment body is a `/review` re-request. */
@@ -21,14 +8,16 @@ export function isReviewCommand(body: string): boolean {
   return REVIEW_COMMAND_RE.test(body.trim());
 }
 
+export interface IssueCommentDeps {
+  github: import("./client.js").GitHubClient;
+  engine: import("../review/engine.js").ReviewEngine;
+  logger: import("../logger.js").Logger;
+}
+
 /** Handle an issue_comment webhook payload for `/review`. Never throws. */
-export async function handleIssueCommentEvent(
-  payload: IssueCommentEvent,
-  deps: IssueCommentDeps,
-): Promise<void> {
+export async function handleIssueCommentEvent(payload: any, deps: IssueCommentDeps): Promise<void> {
   const { installation, repository, issue, comment } = payload;
   const repoSlug = `${repository.owner.login}/${repository.name}`;
-
   if (!installation) {
     deps.logger.warn({ repo: repoSlug, issue: issue.number }, "issue_comment event without installation; skipping");
     return;
@@ -69,29 +58,100 @@ export async function handleIssueCommentEvent(
       },
       { force: true },
     );
-  } catch (e) {
+  } catch (e: any) {
     deps.logger.error({ repo: repoSlug, issue: issue.number, err: e }, "Manual review failed");
     try {
-      await deps.engine.reportFailure(
-        installation.id,
-        repository.owner.login,
-        repository.name,
-        issue.number,
-        (e as Error).message,
-      );
+      await deps.engine.reportFailure(installation.id, repository.owner.login, repository.name, issue.number, e.message);
     } catch (commentErr) {
       deps.logger.error({ err: commentErr }, "Also failed to post failure comment");
     }
   }
 }
+
+export interface ReviewCommentDeps {
+  github: import("./client.js").GitHubClient;
+  engine: import("../review/engine.js").ReviewEngine;
+  logger: import("../logger.js").Logger;
+  conversation?: import("../agent/conversation.js").ConversationEngine;
+}
+
+/**
+ * Handle a `pull_request_review_comment` payload: a developer replied to one of
+ * our inline findings. Routine `/review` commands are left to the issue-comment
+ * handler. Never throws.
+ */
+export async function handleReviewCommentEvent(payload: any, deps: ReviewCommentDeps): Promise<void> {
+  const { installation, repository, pull_request: pr, comment } = payload;
+  const repoSlug = `${repository.owner.login}/${repository.name}`;
+  if (payload.action !== "created") {
+    deps.logger.debug({ repo: repoSlug, action: payload.action }, "Ignoring review comment action");
+    return;
+  }
+  if (!installation) {
+    deps.logger.warn({ repo: repoSlug, pr: pr.number }, "review_comment event without installation; skipping");
+    return;
+  }
+  if (!deps.conversation) {
+    deps.logger.debug("Ignoring review comment reply (no conversation agent wired)");
+    return;
+  }
+  if (comment.user?.type === "Bot") {
+    deps.logger.debug({ repo: repoSlug }, "Ignoring bot review comment");
+    return;
+  }
+  if (typeof comment.in_reply_to_id !== "number") {
+    deps.logger.debug({ repo: repoSlug }, "Ignoring top-level review comment");
+    return;
+  }
+  // `/review` on a thread is a re-review request, not a conversation.
+  if (isReviewCommand(comment.body ?? "")) {
+    deps.logger.debug({ repo: repoSlug }, "Ignoring /review reply in a thread");
+    return;
+  }
+
+  try {
+    const parent = await deps.github.getReviewComment(
+      installation.id,
+      repository.owner.login,
+      repository.name,
+      comment.in_reply_to_id,
+    );
+    if (!parent) {
+      deps.logger.debug({ repo: repoSlug }, "Parent review comment not found; skipping reply");
+      return;
+    }
+    if (parent.user.type !== "Bot" || !isOurInlineComment(parent.body)) {
+      deps.logger.debug({ repo: repoSlug, author: parent.user.login }, "Reply is not on one of our findings; skipping");
+      return;
+    }
+    await deps.conversation.respond({
+      installationId: installation.id,
+      owner: repository.owner.login,
+      repo: repository.name,
+      pullNumber: pr.number,
+      parentCommentId: comment.in_reply_to_id,
+      reply: {
+        id: comment.id,
+        body: comment.body ?? "",
+        author: comment.user?.login ?? "unknown",
+      },
+      prTitle: pr.title,
+      headSha: pr.head.sha,
+    });
+  } catch (e) {
+    deps.logger.error({ repo: repoSlug, pr: pr.number, err: e }, "Conversation reply failed");
+  }
+}
+
+export interface PullRequestDeps {
+  engine: import("../review/engine.js").ReviewEngine;
+  logger: import("../logger.js").Logger;
+}
+
 /** Handle a pull_request webhook payload. Never throws (posts a failure comment instead). */
-export async function handlePullRequestEvent(
-  payload: PullRequestEvent,
-  deps: EventDeps,
-): Promise<void> {
+export async function handlePullRequestEvent(payload: any, deps: PullRequestDeps): Promise<void> {
   const { action, installation, repository, pull_request: pr } = payload;
   const repoSlug = `${repository.owner.login}/${repository.name}`;
-
   if (!installation) {
     deps.logger.warn({ repo: repoSlug, pr: pr.number }, "pull_request event without installation; skipping");
     return;
@@ -115,16 +175,10 @@ export async function handlePullRequestEvent(
       body: pr.body,
       headSha: pr.head.sha,
     });
-  } catch (e) {
+  } catch (e: any) {
     deps.logger.error({ repo: repoSlug, pr: pr.number, err: e }, "Review failed");
     try {
-      await deps.engine.reportFailure(
-        installation.id,
-        repository.owner.login,
-        repository.name,
-        pr.number,
-        (e as Error).message,
-      );
+      await deps.engine.reportFailure(installation.id, repository.owner.login, repository.name, pr.number, e.message);
     } catch (commentErr) {
       deps.logger.error({ err: commentErr }, "Also failed to post failure comment");
     }
