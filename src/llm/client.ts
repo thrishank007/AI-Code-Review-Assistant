@@ -1,5 +1,17 @@
+import type { ChatMessage } from "./types.js";
+
+/** Error raised for any failure talking to the LLM backend. */
+export class LLMError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+    this.name = "LLMError";
+  }
+}
+
+/** Shared config for every LLM backend (fetch and AI SDK clients). */
 export interface LLMConfig {
-  /** OpenAI-compatible base URL, e.g. https://api.openai.com/v1 or http://localhost:11434/v1 */
   baseURL: string;
   apiKey?: string;
   model: string;
@@ -8,27 +20,17 @@ export interface LLMConfig {
   jsonMode: boolean;
 }
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
-
-export class LLMError extends Error {
-  constructor(
-    message: string,
-    public readonly status?: number,
-  ) {
-    super(message);
-    this.name = "LLMError";
-  }
-}
+export type FetchLLMConfig = LLMConfig;
 
 /**
  * Minimal chat-completions client over plain fetch, so it works with any
  * OpenAI-compatible server (OpenAI, Ollama, vLLM, LM Studio, Groq, OpenRouter...).
+ *
+ * This is the zero-dependency fallback: it has no tool-calling support, so the
+ * agent loop is only available on the `ai-sdk` provider.
  */
-export class LLMClient {
-  constructor(private readonly cfg: LLMConfig) {}
+export class FetchLLMClient {
+  constructor(private readonly cfg: FetchLLMConfig) {}
 
   async chat(messages: ChatMessage[]): Promise<string> {
     const url = `${this.cfg.baseURL.replace(/\/+$/, "")}/chat/completions`;
@@ -60,16 +62,20 @@ export class LLMClient {
       throw new LLMError(`LLM returned HTTP ${res.status}: ${text.slice(0, 500)}`, res.status);
     }
 
-    let data: unknown;
+    let data: any;
     try {
       data = JSON.parse(text);
     } catch {
       throw new LLMError("LLM returned a non-JSON body");
     }
-    const content = (data as any)?.choices?.[0]?.message?.content;
+
+    const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.length === 0) {
       throw new LLMError("LLM response missing choices[0].message.content");
     }
     return content;
   }
 }
+
+/** Back-compat alias for the original class name. */
+export { FetchLLMClient as LLMClient };
