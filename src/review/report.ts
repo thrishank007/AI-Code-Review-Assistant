@@ -1,29 +1,19 @@
-import type { PlacedFinding } from "../types.js";
-import type { FilterResult } from "./filters.js";
+import type { Finding } from "../types.js";
 
-const SEVERITY_ICONS: Record<string, string> = {
+const SEVERITY_ICONS = {
   critical: "🔴",
   warning: "🟠",
   suggestion: "🔵",
   nit: "⚪",
-};
+} as const;
 
 const SEVERITY_ORDER = ["critical", "warning", "suggestion", "nit"] as const;
 
 /** Marker used to recognize our own reviews when deduping webhook redeliveries. */
 export const REVIEW_MARKER = "<!-- ai-pr-reviewer -->";
 
-export interface ReportInput {
-  summary: string;
-  overview: string;
-  fileSummaries: { file: string; summary: string }[];
-  placed: PlacedFinding[];
-  filtered: FilterResult;
-  configWarnings: string[];
-}
-
 /** Verdict heading driven by the highest finding severity. */
-export function verdictFor(placed: PlacedFinding[]): string {
+export function verdictFor(placed: { finding: { severity: string } }[]): string {
   const severities = new Set(placed.map((p) => p.finding.severity));
   if (severities.has("critical")) return "🔴 Changes required";
   if (severities.has("warning")) return "🟡 Changes recommended";
@@ -31,7 +21,18 @@ export function verdictFor(placed: PlacedFinding[]): string {
   return "✅ Looks good";
 }
 
-export function renderReviewBody(input: ReportInput): string {
+export interface RenderReviewInput {
+  summary: string;
+  overview: string;
+  fileSummaries: { file: string; summary: string }[];
+  placed: { finding: Finding; line?: number }[];
+  filtered: { included: { filename: string; additions: number; deletions: number }[]; skipped: { path: string }[] };
+  configWarnings: string[];
+  /** Informational lines (e.g. Jev decision-layer outcomes). */
+  notes?: string[];
+}
+
+export function renderReviewBody(input: RenderReviewInput): string {
   const lines: string[] = [];
   lines.push(REVIEW_MARKER);
   lines.push(`## ${verdictFor(input.placed)}`);
@@ -50,9 +51,7 @@ export function renderReviewBody(input: ReportInput): string {
   const stats = input.filtered.included
     .map((f) => `\`${f.filename}\` (+${f.additions}/-${f.deletions})`)
     .join(", ");
-  lines.push(
-    `Changed files: ${input.filtered.included.length}${stats ? ` — ${stats}` : ""}`,
-  );
+  lines.push(`Changed files: ${input.filtered.included.length}${stats ? ` — ${stats}` : ""}`);
   lines.push("");
   lines.push("</details>");
   lines.push("");
@@ -107,23 +106,52 @@ export function renderReviewBody(input: ReportInput): string {
     lines.push(`> ⚠️ ${input.configWarnings.join(" · ")}`);
     lines.push("");
   }
-  lines.push("</details>");
 
+  if (input.notes && input.notes.length > 0) {
+    lines.push(`> ℹ️ ${input.notes.join(" · ")}`);
+    lines.push("");
+  }
+
+  lines.push("</details>");
   lines.push("");
   lines.push("---");
   lines.push(`*Self-hosted ai-pr-reviewer*`);
   return lines.join("\n");
 }
 
-export function renderInlineComment(finding: {
-  severity: string;
-  confidence: string;
-  title: string;
-  body: string;
-}): string {
-  return `**${SEVERITY_ICONS[finding.severity] ?? "⚪"} ${
-    finding.severity
-  } · ${finding.confidence} — ${finding.title}**\n\n${finding.body}`;
+/**
+ * Matches the header every inline comment we post starts with. Used to tell our
+ * own review comments apart from a human's when a thread gets a reply.
+ */
+export const INLINE_COMMENT_PREFIX_RE =
+  /^\*\*(?:🔴|🟠|🔵|⚪)\s+(?:critical|warning|suggestion|nit)\s+·\s+(?:high|medium)\s+—/;
+
+/** True when a comment body was produced by this reviewer. */
+export function isOurInlineComment(body: string): boolean {
+  return INLINE_COMMENT_PREFIX_RE.test(body.trim());
+}
+
+export function renderInlineComment(finding: Finding): string {
+  const parts = [
+    `**${SEVERITY_ICONS[finding.severity] ?? "⚪"} ${finding.severity} · ${finding.confidence} — ${finding.title}**`,
+    "",
+    finding.body,
+  ];
+  const suggestion = renderSuggestion(finding.fix);
+  if (suggestion) parts.push("", suggestion);
+  return parts.join("\n");
+}
+
+/**
+ * Render a GitHub one-click suggestion block. Returns null when the fix is
+ * missing or cannot be expressed safely as a suggestion (nested fences would
+ * break out of the block).
+ */
+export function renderSuggestion(fix?: string): string | null {
+  const body = fix?.replace(/\r\n/g, "\n").replace(/\n+$/, "");
+  if (!body?.trim()) return null;
+  if (body.includes("```")) return null;
+  return ["```suggestion", body, "```"].join("\n");
 }
 
 export function renderDegradedBody(rawText: string): string {
