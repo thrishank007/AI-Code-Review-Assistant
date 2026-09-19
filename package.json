@@ -19,6 +19,9 @@
     "eval": "tsx evals/src/cli.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.71",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "ai": "^7.0.107",
     "dotenv": "^16.4.5",
     "octokit": "^3.1.0",
     "pino": "^9.4.0",

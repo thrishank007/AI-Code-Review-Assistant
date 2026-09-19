@@ -4,4 +4,9 @@ services:
     ports:
       - "3000:3000"
     env_file: .env
+    environment:
+      # Persist the feedback store outside the container filesystem.
+      FEEDBACK_DB_PATH: /app/data/feedback.sqlite
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped

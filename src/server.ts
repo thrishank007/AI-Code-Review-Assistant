@@ -1,14 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { Logger } from "./logger.js";
 import { dispatchWebhookEvent, verifyWebhookSignature } from "./github/webhooks.js";
-import type { IssueCommentEvent, PullRequestEvent } from "./types.js";
-
-export interface ServerDeps {
-  webhookSecret: string;
-  onPullRequest: (payload: PullRequestEvent) => Promise<void>;
-  onIssueComment?: (payload: IssueCommentEvent) => Promise<void>;
-  logger: Logger;
-}
 
 async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -24,7 +15,15 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-export function createAppServer(deps: ServerDeps) {
+export interface AppServerDeps {
+  webhookSecret: string;
+  onPullRequest: (payload: any) => Promise<void>;
+  onIssueComment?: (payload: any) => Promise<void>;
+  onReviewComment?: (payload: any) => Promise<void>;
+  logger: import("./logger.js").Logger;
+}
+
+export function createAppServer(deps: AppServerDeps) {
   const server = createServer((req, res) => {
     void handle(req, res, deps).catch((e) => {
       deps.logger.error({ err: e }, "Unhandled request error");
@@ -32,23 +31,20 @@ export function createAppServer(deps: ServerDeps) {
     });
   });
 
-  async function handle(req: IncomingMessage, res: ServerResponse, d: ServerDeps): Promise<void> {
+  async function handle(req: IncomingMessage, res: ServerResponse, d: AppServerDeps): Promise<void> {
     const url = req.url?.split("?")[0];
-
     if (req.method === "GET" && url === "/healthz") {
       sendJson(res, 200, { ok: true });
       return;
     }
-
     if (req.method === "POST" && url === "/webhook") {
       const raw = await readRawBody(req);
-      const signature = req.headers["x-hub-signature-256"];
-      if (!verifyWebhookSignature(raw, signature as string | undefined, d.webhookSecret)) {
+      const signature = req.headers["x-hub-signature-256"] as string | undefined;
+      if (!verifyWebhookSignature(raw, signature, d.webhookSecret)) {
         d.logger.warn("Rejected webhook with invalid signature");
         sendJson(res, 401, { ok: false, error: "invalid signature" });
         return;
       }
-
       let payload: unknown;
       try {
         payload = JSON.parse(raw.toString("utf8"));
@@ -56,20 +52,19 @@ export function createAppServer(deps: ServerDeps) {
         sendJson(res, 400, { ok: false, error: "invalid JSON body" });
         return;
       }
-
       // Ack immediately: GitHub must not retry (and duplicate) while we review.
       sendJson(res, 202, { ok: true });
       const event = req.headers["x-github-event"];
       setImmediate(() => {
-        void dispatchWebhookEvent(
-          typeof event === "string" ? event : "",
-          payload,
-          { onPullRequest: d.onPullRequest, onIssueComment: d.onIssueComment, logger: d.logger },
-        );
+        void dispatchWebhookEvent(typeof event === "string" ? event : "", payload, {
+          onPullRequest: d.onPullRequest,
+          onIssueComment: d.onIssueComment,
+          onReviewComment: d.onReviewComment,
+          logger: d.logger,
+        });
       });
       return;
     }
-
     sendJson(res, 404, { ok: false, error: "not found" });
   }
 
