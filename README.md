@@ -3,9 +3,12 @@
 A self-hosted **GitHub App** that reviews your pull requests with **your own LLM** — like CodeRabbit or Copilot code review, but open source (MIT) and running against any OpenAI-compatible provider: OpenAI, Ollama, vLLM, LM Studio, Groq, OpenRouter, and anything else that speaks the chat-completions API.
 
 - 🔔 Triggered automatically on every PR (opened / new pushes / ready for review)
-- 💬 Posts one review per push: inline comments on the exact lines + a markdown summary
+- 💬 Posts one review per push: inline comments on the exact lines (with one-click ```suggestion blocks when the model provides a safe fix) + a markdown summary
+- 🤖 Tool-calling agent (`ai-sdk` provider): reads full files, searches code, and checks history before committing to findings — bounded by `AGENT_MAX_STEPS`
+- 💭 Conversational replies: reply to an inline finding and the agent answers in-thread, verifying claims against the code
+- 🧠 Feedback learning (SQLite): disputed/agreed replies tune future prompts per repo
 - 🔌 Bring your own model — one base URL + key + model name
-- 🏠 Single small Node service, no database, deploys anywhere (Docker or plain Node)
+- 🏠 Single small Node service (+ one SQLite file for feedback learning), deploys anywhere (Docker or plain Node)
 - ⚙️ Per-repo config file (`.aireview.yml`) for ignores, extra instructions, and severity filters
 - 🎯 **Jev decision layer** (TypeSafe AI): routes PR complexity to the right model, scores finding confidence, and independently validates severity
 - 🛡️ Non-blocking: reviews are advisory (`COMMENT`), never `REQUEST_CHANGES`
@@ -13,28 +16,36 @@ A self-hosted **GitHub App** that reviews your pull requests with **your own LLM
 ## How it works
 
 ```
-GitHub ── pull_request webhook ──▶ POST /webhook (signature-verified, 202 fast-ack)
-                                      │
-                                      ▼
-                          fetch PR files + .aireview.yml
-                                      │
-                                      ▼
-                    filter (ignores, caps) ─▶ build prompt (diff hunks)
-                                      │
-                                      ▼
-                    Jev: route PR complexity ─▶ pick model
-                                      │
-                                      ▼
-                       your LLM (OpenAI-compatible endpoint)
-                                      │
-                                      ▼
-              parse JSON findings ─▶ Jev: score confidence + validate severity ─▶ filter
-                                      │
-                                      ▼
-              POST PR review: summary + inline comments
+GitHub pull_request webhook ─▶ POST /webhook (signature-verified, 202 fast-ack)
+GitHub issue_comment (/review) ─▶ POST /webhook ─▶ force fresh review (bypasses SHA dedup, works on drafts)
+GitHub pull_request_review_comment (reply to our inline finding) ─▶ POST /webhook ─▶ conversation agent answers in-thread
+                                       │
+                                       ▼
+                          fetch PR files + .aireview.yml + learned preferences (SQLite)
+                                       │
+                                       ▼
+                     filter (ignores, caps) ─▶ build prompt (diff hunks + instructions)
+                                       │
+                                       ▼
+                     Jev: route PR complexity (simple/moderate/complex) ─▶ pick model (per-repo models block)
+                                       │
+                                       ▼
+                  ai-sdk provider: tool-calling agent (read_file, list_directory, search_code,
+                                     get_file_history, read_repo_conventions, bounded by AGENT_MAX_STEPS)
+                  openai-compatible provider: single-shot fetch client (no tools, fallback)
+                                       │
+                                       ▼
+               parse JSON findings ─▶ one corrective retry ─▶ degraded raw post if still unparseable
+                                       │
+                                       ▼
+               Jev: score confidence + drop pre-existing + re-grade severity ─▶ severity filter
+                                       │
+                                       ▼
+               clamp lines to real diff lines ─▶ POST PR review (summary + inline comments with suggestion blocks)
+                                              ─▶ POST check-run (gating via fail_on) ─▶ record findings for feedback
 ```
 
-Hallucinated line numbers are clamped to lines that actually exist in the diff, so GitHub never rejects a comment. Duplicate webhook deliveries are deduped per head SHA. If the LLM returns unparseable output, it gets one corrective retry and then falls back to posting the raw response. Every optional layer (agent, Jev, feedback) degrades independently: if it is misconfigured or failing, the review still happens.
+Hallucinated line numbers are clamped to lines that actually exist in the diff, so GitHub never rejects a comment. When a finding includes a safe one-line fix, the inline comment renders it as a GitHub ```suggestion block for one-click apply (skipped when the fix contains nested fences). Duplicate webhook deliveries are deduped per head SHA. If the LLM returns unparseable output, it gets one corrective retry and then falls back to posting the raw response. Every optional layer (agent, Jev, feedback) degrades independently: if it is misconfigured or failing, the review still happens.
 
 ## Quick start
 
@@ -48,7 +59,7 @@ On GitHub: **Settings → Developer settings → GitHub Apps → New GitHub App*
 | Webhook URL | your service's public HTTPS URL, e.g. `https://reviewer.example.com/webhook` |
 | Webhook secret | a random string (→ `WEBHOOK_SECRET`) |
 | Permissions | **Pull requests: Read & write**, **Contents: Read-only**, **Checks: Read & write** (for status checks) |
-| Subscribe to events | **Pull request**, **Issue comment** (`/review` command) |
+| Subscribe to events | **Pull request**, **Issue comment** (`/review` command), **Pull request review comment** (conversational replies) |
 | Where can this app be installed | Only this account / organization (for an internal app) |
 
 After creating it: note the **App ID** (→ `APP_ID`), and under **Private keys** generate a `.pem` (→ `PRIVATE_KEY`). Install the app on the repos you want reviewed.
@@ -99,6 +110,7 @@ npm run review:pr -- owner/repo#123
 | `PORT` | ➖ | `3000` | |
 | `LOG_LEVEL` | ➖ | `info` | pino level |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_TOKENS` / `LLM_JSON_MODE` | ➖ | `120000` / `4096` / on | |
+| `LLM_PROVIDER` | ➖ | `ai-sdk` | `ai-sdk` = Vercel AI SDK + tool-calling agent; `openai-compatible` = plain fetch client, single-shot, no tools |
 | `MAX_FILES` / `MAX_DIFF_CHARS` | ➖ | `30` / `120000` | Review-size caps |
 | `CHECKS_ENABLED` | ➖ | on | Set `false` to disable check-runs (needs **Checks: Read & write**) |
 | `AGENT_TOOLS_ENABLED` / `AGENT_MAX_STEPS` | ➖ | on / `10` | Let the model read full files, search the repo, and check history before committing to findings |
@@ -134,7 +146,9 @@ fail_on: [critical]
 
 # Model per routed PR complexity (Jev decides which bucket a PR is in)
 # models:
+#   default: qwen2.5-coder:7b
 #   simple: qwen2.5-coder:7b
+#   moderate: qwen2.5-coder:14b
 #   complex: gpt-4o
 
 # Skip the Jev decision layer for this repo
@@ -164,7 +178,7 @@ Findings we post are recorded, and when a developer replies, Jev classifies the 
 Learned from past reviews on this repo: developers frequently dispute findings about [X]; verify them extra carefully.
 ```
 
-Signals are only recorded when Jev is confident about the reading, so the store does not fill up with noise. Storage uses Node's built-in `node:sqlite`: no native dependency, no build step, one file at `FEEDBACK_DB_PATH`.
+Signals are only recorded when Jev is confident about the reading, so the store does not fill up with noise. Storage uses Node's built-in `node:sqlite`: no native dependency, no build step, one file at `FEEDBACK_DB_PATH`. In Docker the store lives on a `/app/data` volume (`docker-compose.yml` maps `./data:/app/data` with `FEEDBACK_DB_PATH=/app/data/feedback.sqlite`) so it survives container upgrades. Requires Node 24 in Docker / Node 23.4+ locally (or 22.5+ with `--experimental-sqlite`); on older runtimes the store logs a warning and disables itself.
 
 ## Development
 
@@ -180,6 +194,8 @@ Layout: `src/github/` (webhooks + API client), `src/review/` (engine, prompt, fi
 ## Manual re-review
 
 Comment `/review` on any PR to force a fresh review (bypasses the duplicate-SHA skip, works on drafts too). Setup: GitHub App → Permissions (**Pull requests: Read & write**, **Contents: Read-only**) → Subscribe to **Issue comment** events.
+
+Reply to one of the reviewer's inline findings to get an agent answer in that thread (it re-reads the code with the same read-only tools before replying, and records a disputed/agreed signal when Jev is confident). Setup: subscribe to **Pull request review comment** events; `/review` inside a thread is treated as a re-review request, not a conversation.
 
 ## Roadmap
 
